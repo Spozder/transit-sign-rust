@@ -22,7 +22,7 @@ impl InputHandler for FlicButton {
         // Read from TCP stream and parse flicd protocol
         // This is a simplified example - actual implementation would need to match flicd's protocol
         let mut buf = [0u8; 64];
-        self.stream.read(&mut buf).await?;
+        self.stream.read(&mut buf).await.map_err(|e| Box::new(e) as Box<dyn Error>)?;
 
         // Parse the flicd protocol and return appropriate event
         // This is placeholder logic - would need actual protocol implementation
