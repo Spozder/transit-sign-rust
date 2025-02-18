@@ -3,7 +3,7 @@ use tokio::io::AsyncReadExt;
 use std::io;
 use std::error::Error;
 
-use super::InputHandler;
+use super::{InputEvent, InputHandler};
 
 // Flic button implementation
 pub struct FlicButton {
@@ -11,14 +11,14 @@ pub struct FlicButton {
 }
 
 impl FlicButton {
-    async fn new() -> Result<Self, io::Error> {
+    pub async fn new() -> Result<Self, io::Error> {
         let stream = TcpStream::connect("127.0.0.1:5551").await?;
         Ok(Self { stream })
     }
 }
 
 impl InputHandler for FlicButton {
-    async fn listen(&mut self) -> Result<InputEvent, Box<dyn Error>> {
+    async fn listen(&mut self) -> Result<InputEvent, Box<dyn Error + Send>> {
         // Read from TCP stream and parse flicd protocol
         // This is a simplified example - actual implementation would need to match flicd's protocol
         let mut buf = [0u8; 64];
@@ -34,7 +34,7 @@ impl InputHandler for FlicButton {
         }
     }
 
-    async fn cleanup(&mut self) -> Result<(), Box<dyn Error>> {
+    async fn cleanup(&mut self) -> Result<(), Box<dyn Error + Send>> {
         // Close connection to flicd
         Ok(())
     }

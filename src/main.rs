@@ -30,7 +30,7 @@ use input::{InputEvent, InputHandler};
 use input::KeyboardInput;
 
 #[cfg(target_os = "linux")]
-use input::FlicButton;
+use input::flic::FlicButton;
 
 pub type SharedTransitStateManager = Arc<RwLock<TransitStateManager>>;
 pub type SharedDisplayFiniteStateMachine = Arc<RwLock<DisplayFiniteStateMachine>>;
