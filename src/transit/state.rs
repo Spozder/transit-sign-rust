@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::error::Error;
+use log::debug;
 use futures::future::try_join_all;
 use crate::config::{Config, Stop};
 use super::{TransitIdentifier, TransitProvider, TransitState};
@@ -52,15 +53,15 @@ impl TransitStateManager {
     ) {
         tokio::join!(
             async {
-                println!("Getting BART Updates...");
+                debug!("Getting BART Updates...");
                 get_state_for_stops(&self.bart, &self.config.bart.stops).await
             },
             async {
-                println!("Getting Muni Updates...");
+                debug!("Getting Muni Updates...");
                 get_state_for_stops(&self.muni, &self.config.muni.stops).await
             },
             async {
-                println!("Getting Bay Wheels Updates...");
+                debug!("Getting Bay Wheels Updates...");
                 get_state_for_stops(&self.baywheels, &self.config.baywheels.stops).await
             }
         )

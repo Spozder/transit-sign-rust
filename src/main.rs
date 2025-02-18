@@ -192,15 +192,15 @@ async fn input_handler_task(display_fsm: SharedDisplayFiniteStateMachine) {
             let mut display_fsm = display_fsm.write().await;
             match event {
                 InputEvent::SinglePress => {
-                    println!("Single press");
+                    debug!("Single press");
                     display_fsm.handle_event(StateEvent::NextPage).await;
                 }
                 InputEvent::DoublePress => {
-                    println!("Double press");
+                    debug!("Double press");
                     display_fsm.handle_event(StateEvent::NextSubpage).await;
                 }
                 InputEvent::LongPress => {
-                    println!("Long press");
+                    debug!("Long press");
                     display_fsm.handle_event(StateEvent::Reset).await;
                 }
             }
