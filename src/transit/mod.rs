@@ -1,3 +1,4 @@
+use log::debug;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc, Local};
 use serde::{Deserialize, Serialize};
@@ -141,10 +142,19 @@ impl TransitState {
         C::Display: DrawTarget<Color = Rgb888>,
         <C::Display as DrawTarget>::Error: std::fmt::Debug
 {
+        debug!("Drawing transit state: {:?}", self);
         match self {
-            TransitState::Predictions(predictions) => Self::draw_predictions(display, predictions),
-            TransitState::BikeInventory(inventory) => Self::draw_bike_inventory(display, inventory),
-            TransitState::EmptyState => (),
+            TransitState::Predictions(predictions) => {
+                debug!("Drawing predictions: {} items", predictions.len());
+                Self::draw_predictions(display, predictions);
+            },
+            TransitState::BikeInventory(inventory) => {
+                debug!("Drawing bike inventory for {}", inventory.station_name);
+                Self::draw_bike_inventory(display, inventory);
+            },
+            TransitState::EmptyState => {
+                debug!("Empty state, nothing to draw");
+            },
         }
     }
 

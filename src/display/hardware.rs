@@ -10,8 +10,14 @@ impl DisplayContext for LedMatrix {
 
     fn show_display(&mut self, display: Self::Display) -> (Self::Display, impl Iterator<Item = StateEvent>) {
         debug!("Hardware display swap starting");
-        let new_canvas = self.swap(display);
-        debug!("Hardware display swap completed");
+        // Try to get some debug info about the canvas state
+        let new_canvas = {
+            debug!("About to swap canvas");
+            let result = self.swap(display);
+            debug!("Canvas swap completed");
+            result
+        };
+        debug!("Hardware display swap completed, returning new canvas");
         (new_canvas, std::iter::empty())
     }
 

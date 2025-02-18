@@ -68,13 +68,20 @@ fn graphics_display<'a, C>(
     C: DisplayContext,
     <C::Display as DrawTarget>::Error: std::fmt::Debug
 {
+    debug!("Drawing to display with mode: {:?}", display_mode);
     match display_mode {
         DisplayMode::Transit { transit_identifier, transit_state, last_update } => {
+            debug!("Transit mode - identifier: {:?}", transit_identifier);
             if let Some(transit_state) = transit_state {
+                debug!("Drawing transit state");
                 transit_state.draw(display, page_idx, subpage_idx);
+            } else {
+                debug!("No transit state available yet");
             }
         },
-        _ => (),
+        _ => {
+            debug!("Non-transit display mode");
+        },
     }
     
     // Swap the display using our safe method
