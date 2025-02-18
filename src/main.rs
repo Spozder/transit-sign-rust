@@ -101,7 +101,8 @@ async fn transit_update_task(shared_transit_manager: SharedTransitStateManager, 
             display_fsm.handle_event(StateEvent::TransitUpdate).await;
         }
 
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        // Wait 60 sec due to Muni API rate limit
+        tokio::time::sleep(Duration::from_secs(60)).await;
     }
 }
 
