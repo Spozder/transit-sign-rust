@@ -256,6 +256,16 @@ impl TransitState {
         C::Display: DrawTarget<Color = Rgb888>,
         <C::Display as DrawTarget>::Error: std::fmt::Debug
     {
+        // Clear display by drawing black rectangle
+        embedded_graphics::primitives::Rectangle::new(
+            Point::new(0, 0),
+            Size::new(96, 16) // Assuming 96x16 display, adjust as needed
+        )
+        .into_styled(PrimitiveStyle::with_fill(Rgb888::BLACK))
+        .draw(display.target_mut())
+        .unwrap();
+
+        // Draw loading message
         Text::new(
             "Loading...",
             Point::new(1, display.y_offset),
