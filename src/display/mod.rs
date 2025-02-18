@@ -122,13 +122,13 @@ mod hardware;
 pub fn get_display() -> Display<LedMatrix> {
     let mut options = LedMatrixOptions::new();
     options.set_rows(16);
-    options.set_cols(96);
+    options.set_cols(32);
     options.set_brightness(35);
     options.set_chain_length(3);
     options.set_hardware_mapping("adafruit-hat");
 
     let mut rt_options = LedRuntimeOptions::new();
-    rt_options.set_gpio_slowdown(3);
+    rt_options.set_gpio_slowdown(5);
     let matrix = LedMatrix::new(Some(options), Some(rt_options)).unwrap();
     let mut canvas = matrix.canvas();
 
