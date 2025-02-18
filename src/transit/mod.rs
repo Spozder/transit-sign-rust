@@ -142,7 +142,7 @@ impl TransitState {
         C::Display: DrawTarget<Color = Rgb888>,
         <C::Display as DrawTarget>::Error: std::fmt::Debug
 {
-        debug!("Drawing transit state: {:?}", self);
+        // debug!("Drawing transit state: {:?}", self);
         match self {
             TransitState::Predictions(predictions) => {
                 debug!("Drawing predictions: {} items", predictions.len());
@@ -166,31 +166,51 @@ impl TransitState {
         C::Display: DrawTarget<Color = Rgb888>,
         <C::Display as DrawTarget>::Error: std::fmt::Debug
     {        
+        debug!("Starting to draw predictions");
+        
+        // Get y_offset before borrowing target
+        let y_offset = display.y_offset;
+        
+        // Get display dimensions from the target
+        let target = display.target_mut();
+        let bounds = target.bounding_box();
+        debug!("Display bounds: {:?}", bounds);
+        
         // Clear display by drawing black rectangle
-        embedded_graphics::primitives::Rectangle::new(
+        if let Err(e) = embedded_graphics::primitives::Rectangle::new(
             Point::new(0, 0),
-            Size::new(96, 16) // Assuming 96x16 display, adjust as needed
+            bounds.size
         )
         .into_styled(PrimitiveStyle::with_fill(Rgb888::BLACK))
-        .draw(display.target_mut())
-        .unwrap();
+        .draw(target) {
+            debug!("Failed to clear display: {:?}", e);
+            return;
+        }
+        
+        debug!("Display cleared, drawing {} predictions", predictions.len());
         
         // Predictions are sorted by minutes_until_arrival, take the first two
         let predictions_to_show = predictions.iter().take(2);
 
         // Draw each prediction
         for (i, pred) in predictions_to_show.enumerate() {
-            let y_pos = (i as i32) * 8 + display.y_offset; // 8 pixels between predictions
+            let y_pos = (i as i32) * 8 + y_offset; // Using stored y_offset
+            let display_text = pred.to_display_string();
+            debug!("Drawing prediction at y={}: {}", y_pos, display_text);
             
             // Draw route name, destination, and arrival time
-            Text::new(
-                &pred.to_display_string().as_str(),
+            let text = Text::new(
+                display_text.as_str(),
                 Point::new(1, y_pos),
                 MonoTextStyle::new(&FONT_5X7, Rgb888::new(pred.color.red, pred.color.green, pred.color.blue))
-            )
-            .draw(display.target_mut())
-            .unwrap();
+            );
+            
+            if let Err(e) = text.draw(target) {
+                debug!("Failed to draw text: {:?}", e);
+            }
         }
+        
+        debug!("Finished drawing predictions");
     }
 
     fn draw_bike_inventory<C : DisplayContext>(
