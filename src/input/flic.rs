@@ -2,6 +2,7 @@ use tokio::net::TcpStream;
 use tokio::io::AsyncReadExt;
 use std::io;
 use std::error::Error;
+use async_trait::async_trait;
 
 use super::{InputEvent, InputHandler};
 
@@ -17,6 +18,7 @@ impl FlicButton {
     }
 }
 
+#[async_trait]
 impl InputHandler for FlicButton {
     async fn listen(&mut self) -> Result<InputEvent, Box<dyn Error + Send>> {
         // Read from TCP stream and parse flicd protocol
