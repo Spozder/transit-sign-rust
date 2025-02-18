@@ -77,8 +77,6 @@ impl SubpageDefinition {
 impl DisplayConfig {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         let config_str = fs::read_to_string("display.toml")?;
-        println!("Attempting to parse display.toml:");
-        println!("{}", config_str);
         
         match toml::from_str::<DisplayConfig>(&config_str) {
             Ok(config) => Ok(config),
