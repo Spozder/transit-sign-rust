@@ -8,7 +8,10 @@ impl DisplayContext for LedMatrix {
     type Display = LedCanvas;
 
     fn swap<'a>(&'a mut self, display: &'a Self::Display) -> impl Iterator<Item = StateEvent> + 'a {
-        self.swap(display);
+        debug!("Hardware display swap starting");
+        // Use swap_active to avoid potential recursion
+        self.swap_active(display);
+        debug!("Hardware display swap completed");
         std::iter::empty()
     }
 }

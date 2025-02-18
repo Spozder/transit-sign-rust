@@ -103,6 +103,7 @@ fn run_display_loop(display_fsm: SharedDisplayFiniteStateMachine) {
     let display_mode = env::var("DISPLAY_MODE").unwrap_or(String::from("console"));
 
     println!("Running in {} mode", display_mode);
+    debug!("Initializing display loop");
 
     if display_mode == "console" {
         loop {
@@ -123,11 +124,24 @@ fn run_display_loop(display_fsm: SharedDisplayFiniteStateMachine) {
         }
     } else {
         // Graphics mode
+        debug!("Starting graphics mode display loop");
+        let mut last_refresh = std::time::Instant::now();
         'running: loop {
+            // Add protection against too-frequent refreshes
+            let now = std::time::Instant::now();
+            if now.duration_since(last_refresh) < Duration::from_millis(50) {
+                std::thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            last_refresh = now;
+
+            debug!("Graphics mode refresh cycle starting");
             // Run the async FSM update in a blocking context
             rt.block_on(async {
                 let mut display_fsm_write = display_fsm.write().await;
+                debug!("Graphics mode: acquired FSM lock");
                 display_fsm_write.handle_event(StateEvent::DisplayRefresh).await;
+                debug!("Graphics mode: completed display refresh");
             });
 
             // Get the current state
@@ -136,8 +150,10 @@ fn run_display_loop(display_fsm: SharedDisplayFiniteStateMachine) {
                 (display_fsm_read.current_state().clone(), display_fsm_read.page_idx, display_fsm_read.subpage_idx)
             });
 
+            debug!("Graphics mode: updating display");
             // Update display
             let events = graphics_display(&mut display, &current_state.0, current_state.1, current_state.2);
+            debug!("Graphics mode: display update complete");
 
             for event in events {
                 match event {
