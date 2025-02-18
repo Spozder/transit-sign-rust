@@ -125,7 +125,7 @@ pub fn get_display() -> Display<LedMatrix> {
     let matrix = LedMatrix::new(Some(options), Some(rt_options)).unwrap();
     let mut canvas = matrix.canvas();
 
-    Display::new(canvas, matrix, 7)
+    Display::new(matrix, canvas, 7)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
