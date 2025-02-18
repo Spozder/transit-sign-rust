@@ -24,13 +24,26 @@ use display::fsm::DisplayFiniteStateMachine;
 
 use transit::state::TransitStateManager;
 
-use input::{InputEvent, InputHandler, KeyboardInput};
+use input::{InputEvent, InputHandler};
+
+#[cfg(target_os = "macos")]
+use input::KeyboardInput;
+
+#[cfg(target_os = "linux")]
+use input::FlicButton;
 
 pub type SharedTransitStateManager = Arc<RwLock<TransitStateManager>>;
 pub type SharedDisplayFiniteStateMachine = Arc<RwLock<DisplayFiniteStateMachine>>;
 
+#[cfg(target_os = "macos")]
 async fn create_input_handler() -> Result<Box<dyn InputHandler + Send>, Box<dyn Error>> {
     Ok(Box::new(KeyboardInput::new()))
+}
+
+#[cfg(target_os = "linux")]
+async fn create_input_handler() -> Result<Box<dyn InputHandler + Send>, Box<dyn Error>> {
+    let flic = FlicButton::new().await?;
+    Ok(Box::new(flic))
 }
 
 fn console_display(display_mode: &DisplayMode, page_idx: usize, subpage_idx: usize) {

@@ -1,6 +1,11 @@
 use std::error::Error;
 use tokio::io::AsyncReadExt;
+use tokio::sync::mpsc;
 use async_trait::async_trait;
+use crate::display::StateEvent;
+
+#[cfg(target_os = "linux")]
+pub mod flic;
 
 // Common event type for all input methods
 #[derive(Debug, Clone)]
