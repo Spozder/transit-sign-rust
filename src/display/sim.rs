@@ -17,9 +17,9 @@ use super::DisplayContext;
 impl DisplayContext for Window {
     type Display = SimulatorDisplay<Rgb888>;
 
-    fn show_display<'a>(&'a mut self, display: &'a Self::Display) -> impl Iterator<Item = StateEvent> + 'a {
-        self.update(display);
-        self.events().filter_map(|event| {
+    fn show_display(&mut self, display: Self::Display) -> (Self::Display, impl Iterator<Item = StateEvent>) {
+        self.update(&display);
+        let events = self.events().filter_map(|event| {
             match event {
                 SimulatorEvent::Quit => Some(StateEvent::Quit),
                 SimulatorEvent::KeyDown { keycode, keymod: _, repeat: _ } => {
@@ -33,7 +33,12 @@ impl DisplayContext for Window {
                 },
                 _ => None,
             }
-        })
+        }).collect::<Vec<_>>();
+        (display, events.into_iter())
+    }
+
+    fn target(&mut self) -> Self::Display {
+        setup_drawable()
     }
 }
 

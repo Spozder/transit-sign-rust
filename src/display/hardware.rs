@@ -8,11 +8,14 @@ use super::DisplayContext;
 impl DisplayContext for LedMatrix {
     type Display = LedCanvas;
 
-    fn show_display<'a>(&'a mut self, display: &'a Self::Display) -> impl Iterator<Item = StateEvent> + 'a {
+    fn show_display(&mut self, display: Self::Display) -> (Self::Display, impl Iterator<Item = StateEvent>) {
         debug!("Hardware display swap starting");
-        // Use swap_active to avoid potential recursion
-        self.swap(display);
+        let new_canvas = self.swap(display);
         debug!("Hardware display swap completed");
-        std::iter::empty()
+        (new_canvas, std::iter::empty())
+    }
+
+    fn target(&mut self) -> Self::Display {
+        self.offscreen_canvas()
     }
 }

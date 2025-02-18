@@ -67,7 +67,11 @@ impl PageDisplayHandler {
 pub trait DisplayContext {
     type Display: DrawTarget<Color = Rgb888>;
 
-    fn show_display<'a>(&'a mut self, display: &'a Self::Display) -> impl Iterator<Item = StateEvent> + 'a;
+    // Takes ownership of the current canvas and returns the new one
+    fn show_display(&mut self, display: Self::Display) -> (Self::Display, impl Iterator<Item = StateEvent>);
+
+    // Creates a new display target
+    fn target(&mut self) -> Self::Display;
 }
 
 // A wrapper type that holds both the display context and its drawable target
@@ -91,8 +95,11 @@ impl<C: DisplayContext> Display<C> {
     }
 
     // Add a method that handles the swap internally
-    pub fn show_display<'a>(&'a mut self) -> impl Iterator<Item = StateEvent> + 'a {
-        self.context.show_display(&self.target)
+    pub fn show_display(&mut self) -> impl Iterator<Item = StateEvent> + '_ {
+        let target = std::mem::replace(&mut self.target, self.context.target());
+        let (new_target, events) = self.context.show_display(target);
+        self.target = new_target;
+        events
     }
 }
 
