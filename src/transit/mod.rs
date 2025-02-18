@@ -153,7 +153,8 @@ impl TransitState {
                 Self::draw_bike_inventory(display, inventory);
             },
             TransitState::EmptyState => {
-                debug!("Empty state, nothing to draw");
+                debug!("Empty state, draw \"loading...\"");
+                Self::draw_loading(display);
             },
         }
     }
@@ -242,6 +243,22 @@ impl TransitState {
         Text::new(
             &format!("Docks: {}", inventory.docks_available),
             Point::new(1, display.y_offset + 8),
+            MonoTextStyle::new(&FONT_5X7, Rgb888::new(255, 255, 255))
+        )
+        .draw(display.target_mut())
+        .unwrap();
+    }
+
+    fn draw_loading<C : DisplayContext>(
+        display: &mut Display<C>
+    ) where
+        C: DisplayContext,
+        C::Display: DrawTarget<Color = Rgb888>,
+        <C::Display as DrawTarget>::Error: std::fmt::Debug
+    {
+        Text::new(
+            "Loading...",
+            Point::new(1, display.y_offset),
             MonoTextStyle::new(&FONT_5X7, Rgb888::new(255, 255, 255))
         )
         .draw(display.target_mut())
