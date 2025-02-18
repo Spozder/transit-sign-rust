@@ -17,7 +17,7 @@ use super::DisplayContext;
 impl DisplayContext for Window {
     type Display = SimulatorDisplay<Rgb888>;
 
-    fn swap<'a>(&'a mut self, display: &'a Self::Display) -> impl Iterator<Item = StateEvent> + 'a {
+    fn show_display<'a>(&'a mut self, display: &'a Self::Display) -> impl Iterator<Item = StateEvent> + 'a {
         self.update(display);
         self.events().filter_map(|event| {
             match event {

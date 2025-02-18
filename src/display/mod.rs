@@ -67,7 +67,7 @@ impl PageDisplayHandler {
 pub trait DisplayContext {
     type Display: DrawTarget<Color = Rgb888>;
 
-    fn swap<'a>(&'a mut self, display: &'a Self::Display) -> impl Iterator<Item = StateEvent> + 'a;
+    fn show_display<'a>(&'a mut self, display: &'a Self::Display) -> impl Iterator<Item = StateEvent> + 'a;
 }
 
 // A wrapper type that holds both the display context and its drawable target
@@ -91,8 +91,8 @@ impl<C: DisplayContext> Display<C> {
     }
 
     // Add a method that handles the swap internally
-    pub fn swap_display<'a>(&'a mut self) -> impl Iterator<Item = StateEvent> + 'a {
-        self.context.swap(&self.target)
+    pub fn show_display<'a>(&'a mut self) -> impl Iterator<Item = StateEvent> + 'a {
+        self.context.show_display(&self.target)
     }
 }
 

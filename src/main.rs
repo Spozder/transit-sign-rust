@@ -3,6 +3,7 @@
 use std::env;
 use std::error::Error;
 use std::time::Duration;
+use log::debug;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use embedded_graphics::{
@@ -77,7 +78,7 @@ fn graphics_display<'a, C>(
     }
     
     // Swap the display using our safe method
-    display.swap_display()
+    display.show_display()
 }
 
 async fn transit_update_task(shared_transit_manager: SharedTransitStateManager, display_fsm: SharedDisplayFiniteStateMachine) {
