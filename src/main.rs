@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use std::env;
 use std::error::Error;
 use std::time::Duration;
@@ -6,9 +8,10 @@ use tokio::sync::RwLock;
 use embedded_graphics::{
     prelude::*,
     pixelcolor::Rgb888,
-    draw_target::DrawTarget,
     primitives::{Circle, PrimitiveStyle},
 };
+
+use embedded_graphics_core::draw_target::DrawTarget;
 
 mod display;
 mod transit;

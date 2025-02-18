@@ -2,7 +2,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use crate::transit::{TransitIdentifier, TransitState};
 
-use embedded_graphics::draw_target::DrawTarget;
+use embedded_graphics_core::draw_target::DrawTarget;
 use embedded_graphics::pixelcolor::Rgb888;
 
 #[cfg(target_os = "macos")]
@@ -11,7 +11,8 @@ use embedded_graphics_simulator::Window;
 #[cfg(target_os = "linux")]
 use rpi_led_matrix::{
     LedMatrix,
-    options::LedMatrixOptions
+    LedMatrixOptions,
+    LedRuntimeOptions
 };
 
 // Events that can trigger state transitions
@@ -107,9 +108,11 @@ pub fn get_display() -> Display<Window> {
     Display::new(context, target, 7)
 }
 
-// TODO: Add the hardware implementation
-#[cfg(not(target_os = "macos"))]
-pub fn get_display() -> Display<impl DisplayContext> {
+#[cfg(target_os = "linux")]
+mod hardware;
+
+#[cfg(target_os = "linux")]
+pub fn get_display() -> Display<LedMatrix> {
     let mut options = LedMatrixOptions::new();
     options.set_rows(16);
     options.set_cols(96);
@@ -122,7 +125,7 @@ pub fn get_display() -> Display<impl DisplayContext> {
     let matrix = LedMatrix::new(Some(options), Some(rt_options)).unwrap();
     let mut canvas = matrix.canvas();
 
-    Display::new(canvas, matrix)
+    Display::new(canvas, matrix, 7)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
