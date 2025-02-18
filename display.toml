@@ -1,0 +1,63 @@
+# Transit Display Configuration
+[message_timeout]
+secs = 5
+nanos = 0
+
+[error_timeout]
+secs = 30
+nanos = 0
+
+
+# Each page is a list of subpages
+# Each subpage is a transit identifier and a page display handler key
+# They are nested first by station (MONT, EMBR, 14421, etc) and then by direction (North, South, etc)
+
+# Transit Identifier
+#   provider_key: bart, muni, baywheels
+#   station_id: MONT, EMBR, 14421, etc
+#   direction: North, South
+
+# Page Display Handler Key
+#   predictions, bike_inventory
+
+# BART Pages MONT
+[[pages]]
+subpages = [
+    { transit_identifier = { provider_key = "bart", station_id = "MONT", direction = "North" }, page_display_handler_key = "predictions" },
+    { transit_identifier = { provider_key = "bart", station_id = "MONT", direction = "South" }, page_display_handler_key = "predictions" }
+]
+
+# BART Pages EMBR
+[[pages]]
+subpages = [
+    { transit_identifier = { provider_key = "bart", station_id = "EMBR", direction = "North" }, page_display_handler_key = "predictions" },
+    { transit_identifier = { provider_key = "bart", station_id = "EMBR", direction = "South" }, page_display_handler_key = "predictions" }
+]
+
+# Muni Pages 24
+[[pages]]
+subpages = [
+    { transit_identifier = { provider_key = "muni", station_id = "14421", direction = "North" }, page_display_handler_key = "predictions" },
+    { transit_identifier = { provider_key = "muni", station_id = "14422", direction = "South" }, page_display_handler_key = "predictions" }
+]
+
+
+# Muni Pages 38
+[[pages]]
+subpages = [
+    { transit_identifier = { provider_key = "muni", station_id = "14294", direction = "East" }, page_display_handler_key = "predictions" },
+    { transit_identifier = { provider_key = "muni", station_id = "14293", direction = "West" }, page_display_handler_key = "predictions" }
+]
+
+# Muni Pages 22
+[[pages]]
+subpages = [
+    { transit_identifier = { provider_key = "muni", station_id = "14633", direction = "North" }, page_display_handler_key = "predictions" },
+    { transit_identifier = { provider_key = "muni", station_id = "14634", direction = "South" }, page_display_handler_key = "predictions" }
+]
+
+# Bay Wheel Pages
+[[pages]]
+subpages = [
+    { transit_identifier = { provider_key = "baywheels", station_id = "3144f47a-86f7-40f6-9ff0-5c8120babf6a", direction = "None" }, page_display_handler_key = "bike_inventory" }
+]

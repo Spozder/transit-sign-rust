@@ -1,0 +1,22 @@
+# Transit Stop Configuration
+
+[bart]
+stops = [
+    { id = "MONT", name = "Montgomery St. Station", direction = "Both" },
+    { id = "EMBR", name = "Embarcadero Station", direction = "Both" }
+]
+
+[muni]
+stops = [
+    { id = "14421", name = "Divisadero St & Geary Blvd North", direction = "North" },
+    { id = "14422", name = "Divisadero St & Geary Blvd South", direction = "South" },
+    { id = "14294", name = "Geary Blvd & Divisadero St East", direction = "East" },
+    { id = "14293", name = "Geary Blvd & Divisadero St West", direction = "West" },
+    { id = "14633", name = "Fillmore St & O'Farrell St North", direction = "North" },
+    { id = "14634", name = "Fillmore St & O'Farrell St South", direction = "South" }
+]
+
+[baywheels]
+stops = [
+    { id = "3144f47a-86f7-40f6-9ff0-5c8120babf6a", name = "O'Farrell St at Divisadero St", direction = "Both" }
+]
