@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::{config::Stop, error::{TransitError, TransitResult}};
 use super::{BikeInventory, TransitProvider, TransitState};
 
-const EBIKES_API_URL: &str = "https://gbfs.lyft.com/gbfs/1.1/bay/fr/ebikes_at_stations.json";
+const EBIKES_API_URL: &str = "https://gbfs.lyft.com/gbfs/1.1/bay/en/ebikes_at_stations.json";
 const STATION_STATUS_URL: &str = "https://gbfs.lyft.com/gbfs/1.1/bay/en/station_status.json";
 
 pub struct BayWheelsProvider {

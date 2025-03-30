@@ -201,24 +201,31 @@ fn run_display_loop(display_fsm: SharedDisplayFiniteStateMachine) {
 async fn input_handler_task(display_fsm: SharedDisplayFiniteStateMachine) {
     let mut input_handler = display_fsm.read().await.get_input_handler().await;
     loop {
-        let event = input_handler.listen().await.expect("Failed to listen for input");
-        {
-            let mut display_fsm = display_fsm.write().await;
-            match event {
-                InputEvent::SinglePress => {
-                    debug!("Single press");
-                    display_fsm.handle_event(StateEvent::NextPage).await;
+        match input_handler.listen().await {
+            Ok(event) => {
+                let mut display_fsm = display_fsm.write().await;
+                match event {
+                    InputEvent::SinglePress => {
+                        debug!("Single press");
+                        display_fsm.handle_event(StateEvent::NextPage).await;
+                    }
+                    InputEvent::DoublePress => {
+                        debug!("Double press");
+                        display_fsm.handle_event(StateEvent::NextSubpage).await;
+                    }
+                    InputEvent::LongPress => {
+                        debug!("Long press");
+                        display_fsm.handle_event(StateEvent::Reset).await;
+                    }
                 }
-                InputEvent::DoublePress => {
-                    debug!("Double press");
-                    display_fsm.handle_event(StateEvent::NextSubpage).await;
-                }
-                InputEvent::LongPress => {
-                    debug!("Long press");
-                    display_fsm.handle_event(StateEvent::Reset).await;
-                }
+            },
+            Err(err) => {
+                // Log the error instead of panicking
+                log::error!("Failed to listen for input: {}", err);
+                // Add a small delay to avoid tight error loops
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
-        }   
+        }
     }
 }
     
