@@ -41,7 +41,7 @@ async fn create_input_handler(input_type: InputType) -> TransitResult<Box<dyn In
             Ok(Box::new(keyboard))
         },
         InputType::Flic => {
-            let button = FlicButton::new().await?;
+            let button = FlicButton::new("00:00:00:00:00:00").await?;
             Ok(Box::new(button))
         }
     }
