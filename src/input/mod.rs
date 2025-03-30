@@ -46,18 +46,21 @@ impl KeyboardInput {
 impl InputHandler for KeyboardInput {
     async fn listen(&mut self) -> TransitResult<InputEvent> {
         let mut buf = [0u8; 1];
-        self.stdin.read_exact(&mut buf).await.map_err(|e| TransitError::Io(e))?;
 
-        // Handle key press, ignore other keys
-        match buf[0] {
-            b's' => Ok(InputEvent::SinglePress), // 's' for single press
-            b'd' => Ok(InputEvent::DoublePress), // 'd' for double press
-            b'l' => Ok(InputEvent::LongPress),   // 'l' for long press
-            _ => Box::pin(self.listen()).await,  // Ignore other keys and use Box::pin for recursion
+        loop {
+            self.stdin.read_exact(&mut buf).await.map_err(|e| TransitError::Io(e))?;
+
+            // Handle key press, ignore other keys
+            match buf[0] {
+                b's' => return Ok(InputEvent::SinglePress),
+                b'd' => return Ok(InputEvent::DoublePress),
+                b'l' => return Ok(InputEvent::LongPress),
+                _ => continue,
+            }
         }
     }
 
     async fn cleanup(&mut self) -> TransitResult<()> {
-        Ok(()) // Nothing to clean up for keyboard
+        Ok(())
     }
 }
