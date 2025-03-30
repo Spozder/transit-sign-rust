@@ -4,6 +4,7 @@ use std::io;
 use std::error::Error;
 use async_trait::async_trait;
 use std::time::Duration;
+use std::fmt::Write as FmtWrite;
 
 use super::{InputEvent, InputHandler};
 use crate::error::{TransitError, TransitResult};
@@ -40,6 +41,18 @@ const LATENCY_NORMAL: u8 = 0;
 // Bluetooth address type (6 bytes)
 type BdAddr = [u8; 6];
 
+// Helper function to format bytes for debug output
+fn format_bytes(bytes: &[u8]) -> String {
+    let mut s = String::new();
+    for (i, &b) in bytes.iter().enumerate() {
+        if i > 0 {
+            s.push(' ');
+        }
+        write!(s, "{:02x}", b).unwrap();
+    }
+    s
+}
+
 // Flic button implementation
 pub struct FlicButton {
     stream: TcpStream,
@@ -50,11 +63,16 @@ pub struct FlicButton {
 
 impl FlicButton {
     pub async fn new(button_addr_str: &str) -> Result<Self, io::Error> {
+        println!("FlicButton::new: Creating new FlicButton with address {}", button_addr_str);
+        
         // Parse the button address (format: "xx:xx:xx:xx:xx:xx")
         let button_addr = Self::parse_bd_addr(button_addr_str)?;
+        println!("FlicButton::new: Parsed button address: {}", format_bytes(&button_addr));
         
         // Connect to the Flic daemon
+        println!("FlicButton::new: Connecting to Flic daemon at 127.0.0.1:5551");
         let stream = TcpStream::connect("127.0.0.1:5551").await?;
+        println!("FlicButton::new: Connected to Flic daemon");
         
         // Use a simple connection ID
         let conn_id = 1;
@@ -71,6 +89,7 @@ impl FlicButton {
     fn parse_bd_addr(addr_str: &str) -> Result<BdAddr, io::Error> {
         let parts: Vec<&str> = addr_str.split(':').collect();
         if parts.len() != 6 {
+            println!("parse_bd_addr: Invalid address format: {}", addr_str);
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Bluetooth address must be in format xx:xx:xx:xx:xx:xx"
@@ -79,12 +98,16 @@ impl FlicButton {
         
         let mut addr = [0u8; 6];
         for (i, part) in parts.iter().enumerate() {
-            addr[i] = u8::from_str_radix(part, 16).map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("Invalid hex value in Bluetooth address: {}", part)
-                )
-            })?;
+            match u8::from_str_radix(part, 16) {
+                Ok(val) => addr[i] = val,
+                Err(e) => {
+                    println!("parse_bd_addr: Invalid hex value in part {}: {}", i, part);
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("Invalid hex value in Bluetooth address: {}", part)
+                    ));
+                }
+            }
         }
         
         Ok(addr)
@@ -92,6 +115,8 @@ impl FlicButton {
     
     // Create a connection channel to the button
     async fn create_connection_channel(&mut self) -> Result<(), io::Error> {
+        println!("create_connection_channel: Creating connection channel for button {:?}", format_bytes(&self.button_addr));
+        
         // Prepare the command packet
         let mut cmd = Vec::with_capacity(16);
         cmd.push(CMD_CREATE_CONNECTION_CHANNEL);
@@ -108,14 +133,22 @@ impl FlicButton {
         // Auto disconnect time (2 bytes, little endian) - 511 means never disconnect
         cmd.extend_from_slice(&(511u16).to_le_bytes());
         
+        println!("create_connection_channel: Sending command packet: {}", format_bytes(&cmd));
+        
         // Send the command
         self.stream.write_all(&cmd).await?;
+        println!("create_connection_channel: Command sent, waiting for response");
         
         // Wait for response
         let mut response = [0u8; 64];
         let bytes_read = self.stream.read(&mut response).await?;
         
+        println!("create_connection_channel: Received {} bytes: {}", 
+                 bytes_read, 
+                 format_bytes(&response[..bytes_read]));
+        
         if bytes_read < 3 {
+            println!("create_connection_channel: Incomplete response (only {} bytes)", bytes_read);
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "Incomplete response from Flic daemon"
@@ -126,7 +159,10 @@ impl FlicButton {
         if response[0] == EVT_CREATE_CONNECTION_CHANNEL_RESPONSE {
             // Extract connection ID and result
             let result = response[2];
+            println!("create_connection_channel: Got connection channel response with result code: {}", result);
+            
             if result != 0 {
+                println!("create_connection_channel: Failed with error code: {}", result);
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
                     format!("Failed to create connection channel, error code: {}", result)
@@ -134,10 +170,13 @@ impl FlicButton {
             }
             
             // Now wait for connection status to change to READY
+            println!("create_connection_channel: Waiting for READY status");
             self.wait_for_ready_status().await?;
             
+            println!("create_connection_channel: Connection channel created successfully");
             Ok(())
         } else {
+            println!("create_connection_channel: Unexpected response opcode: {}", response[0]);
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("Unexpected response opcode: {}", response[0])
@@ -147,13 +186,20 @@ impl FlicButton {
     
     // Wait for the connection status to change to READY
     async fn wait_for_ready_status(&mut self) -> Result<(), io::Error> {
+        println!("wait_for_ready_status: Waiting for button to be ready");
         let mut buf = [0u8; 64];
         let mut attempts = 0;
         
         while attempts < 10 {
+            println!("wait_for_ready_status: Attempt {} of 10", attempts + 1);
             let bytes_read = self.stream.read(&mut buf).await?;
             
+            println!("wait_for_ready_status: Received {} bytes: {}", 
+                     bytes_read, 
+                     format_bytes(&buf[..bytes_read]));
+            
             if bytes_read < 3 {
+                println!("wait_for_ready_status: Incomplete data, waiting...");
                 attempts += 1;
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 continue;
@@ -164,12 +210,18 @@ impl FlicButton {
                 let conn_id_bytes = [buf[1], buf[2], buf[3], buf[4]];
                 let conn_id = u32::from_le_bytes(conn_id_bytes);
                 
+                println!("wait_for_ready_status: Connection status changed for conn_id: {}", conn_id);
+                
                 if conn_id == self.conn_id {
                     let status = buf[5];
+                    println!("wait_for_ready_status: Status is now: {}", status);
+                    
                     if status == READY {
+                        println!("wait_for_ready_status: Button is READY");
                         self.connected = true;
                         return Ok(());
                     } else if status == DISCONNECTED {
+                        println!("wait_for_ready_status: Button DISCONNECTED");
                         return Err(io::Error::new(
                             io::ErrorKind::ConnectionAborted,
                             "Button disconnected before ready"
@@ -182,6 +234,7 @@ impl FlicButton {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         
+        println!("wait_for_ready_status: Timed out waiting for button");
         Err(io::Error::new(
             io::ErrorKind::TimedOut,
             "Timed out waiting for button to be ready"
@@ -191,67 +244,106 @@ impl FlicButton {
     // Helper to parse a Flic event packet
     fn parse_event(&mut self, buf: &[u8]) -> Option<InputEvent> {
         if buf.len() < 10 {  // Minimum packet size
+            println!("parse_event: Packet too small: {} bytes", buf.len());
             return None;
         }
         
         let opcode = buf[0];
+        println!("parse_event: Parsing event with opcode: {}", opcode);
         
         // Check if the connection ID matches
         if buf.len() >= 5 {
             let conn_id_bytes = [buf[1], buf[2], buf[3], buf[4]];
             let conn_id = u32::from_le_bytes(conn_id_bytes);
             
+            println!("parse_event: Event for conn_id: {}", conn_id);
+            
             if conn_id != self.conn_id {
+                println!("parse_event: Not for our connection (our conn_id: {})", self.conn_id);
                 return None;  // Not for our connection
             }
         }
         
         match opcode {
             EVT_BUTTON_UP_OR_DOWN => {
+                println!("parse_event: Button up/down event, click_type: {}", buf[5]);
                 // We're only interested in button down events
                 if buf[5] == BUTTON_DOWN {
+                    println!("parse_event: BUTTON_DOWN detected");
                     Some(InputEvent::SinglePress)
                 } else {
                     None
                 }
             },
             EVT_BUTTON_CLICK_OR_HOLD => {
+                println!("parse_event: Button click/hold event, click_type: {}", buf[5]);
                 match buf[5] {
-                    BUTTON_CLICK => Some(InputEvent::SinglePress),
-                    BUTTON_HOLD => Some(InputEvent::LongPress),
+                    BUTTON_CLICK => {
+                        println!("parse_event: BUTTON_CLICK detected");
+                        Some(InputEvent::SinglePress)
+                    },
+                    BUTTON_HOLD => {
+                        println!("parse_event: BUTTON_HOLD detected");
+                        Some(InputEvent::LongPress)
+                    },
                     _ => None,
                 }
             },
             EVT_BUTTON_SINGLE_OR_DOUBLE_CLICK => {
+                println!("parse_event: Button single/double click event, click_type: {}", buf[5]);
                 match buf[5] {
-                    BUTTON_SINGLE_CLICK => Some(InputEvent::SinglePress),
-                    BUTTON_DOUBLE_CLICK => Some(InputEvent::DoublePress),
+                    BUTTON_SINGLE_CLICK => {
+                        println!("parse_event: BUTTON_SINGLE_CLICK detected");
+                        Some(InputEvent::SinglePress)
+                    },
+                    BUTTON_DOUBLE_CLICK => {
+                        println!("parse_event: BUTTON_DOUBLE_CLICK detected");
+                        Some(InputEvent::DoublePress)
+                    },
                     _ => None,
                 }
             },
             EVT_BUTTON_SINGLE_OR_DOUBLE_CLICK_OR_HOLD => {
+                println!("parse_event: Button single/double/hold event, click_type: {}", buf[5]);
                 match buf[5] {
-                    BUTTON_SINGLE_CLICK => Some(InputEvent::SinglePress),
-                    BUTTON_DOUBLE_CLICK => Some(InputEvent::DoublePress),
-                    BUTTON_HOLD => Some(InputEvent::LongPress),
+                    BUTTON_SINGLE_CLICK => {
+                        println!("parse_event: BUTTON_SINGLE_CLICK detected");
+                        Some(InputEvent::SinglePress)
+                    },
+                    BUTTON_DOUBLE_CLICK => {
+                        println!("parse_event: BUTTON_DOUBLE_CLICK detected");
+                        Some(InputEvent::DoublePress)
+                    },
+                    BUTTON_HOLD => {
+                        println!("parse_event: BUTTON_HOLD detected");
+                        Some(InputEvent::LongPress)
+                    },
                     _ => None,
                 }
             },
             EVT_CONNECTION_STATUS_CHANGED => {
+                println!("parse_event: Connection status changed event, status: {}", buf[5]);
                 // Update our connection status
                 if buf[5] == READY {
+                    println!("parse_event: Connection is now READY");
                     self.connected = true;
                 } else if buf[5] == DISCONNECTED {
+                    println!("parse_event: Connection is now DISCONNECTED");
                     self.connected = false;
                 }
                 None
             },
-            _ => None,
+            _ => {
+                println!("parse_event: Unknown opcode: {}", opcode);
+                None
+            },
         }
     }
     
     // Remove the connection channel
     async fn remove_connection_channel(&mut self) -> Result<(), io::Error> {
+        println!("remove_connection_channel: Removing connection channel {}", self.conn_id);
+        
         // Prepare the command packet
         let mut cmd = Vec::with_capacity(5);
         cmd.push(CMD_REMOVE_CONNECTION_CHANNEL);
@@ -259,9 +351,12 @@ impl FlicButton {
         // Connection ID (4 bytes, little endian)
         cmd.extend_from_slice(&self.conn_id.to_le_bytes());
         
+        println!("remove_connection_channel: Sending command: {}", format_bytes(&cmd));
+        
         // Send the command
         self.stream.write_all(&cmd).await?;
         
+        println!("remove_connection_channel: Connection channel removed");
         Ok(())
     }
 }
@@ -271,17 +366,27 @@ impl InputHandler for FlicButton {
     async fn listen(&mut self) -> TransitResult<InputEvent> {
         // Ensure we have a connection channel
         if !self.connected {
+            println!("listen: Not connected, creating connection channel");
             self.create_connection_channel().await.map_err(|e| TransitError::Io(e))?;
         }
+        
+        println!("listen: Starting to listen for button events");
         
         // Buffer to read protocol data
         let mut buf = [0u8; 64];
         
         loop {
+            println!("listen: Waiting for data from Flic daemon");
+            
             // Read from TCP stream
             let bytes_read = self.stream.read(&mut buf).await.map_err(|e| TransitError::Io(e))?;
             
+            println!("listen: Received {} bytes: {}", 
+                     bytes_read, 
+                     format_bytes(&buf[..bytes_read]));
+            
             if bytes_read == 0 {
+                println!("listen: Connection closed, reconnecting");
                 // Connection closed, try to reconnect
                 self.stream = TcpStream::connect("127.0.0.1:5551").await.map_err(|e| TransitError::Io(e))?;
                 self.connected = false;
@@ -291,21 +396,29 @@ impl InputHandler for FlicButton {
             
             // Try to parse the event
             if let Some(event) = self.parse_event(&buf[..bytes_read]) {
+                println!("listen: Parsed valid event: {:?}", event);
                 return Ok(event);
             }
             
+            println!("listen: No valid event found, continuing to listen");
             // If we couldn't parse a valid event, continue reading
         }
     }
 
     async fn cleanup(&mut self) -> TransitResult<()> {
+        println!("cleanup: Cleaning up FlicButton");
+        
         // Remove connection channel if connected
         if self.connected {
+            println!("cleanup: Removing connection channel");
             self.remove_connection_channel().await.map_err(|e| TransitError::Io(e))?;
         }
         
         // Close connection to flicd
+        println!("cleanup: Shutting down TCP connection");
         self.stream.shutdown().await.map_err(|e| TransitError::Io(e))?;
+        
+        println!("cleanup: FlicButton cleanup complete");
         Ok(())
     }
 }
