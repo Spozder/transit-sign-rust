@@ -1,7 +1,6 @@
 #![allow(warnings)]
 
 use std::env;
-use std::error::Error;
 use std::time::Duration;
 use log::debug;
 use std::sync::Arc;
@@ -14,10 +13,13 @@ use embedded_graphics::{
 
 use embedded_graphics_core::draw_target::DrawTarget;
 
+mod error;
 mod display;
 mod transit;
 mod config;
 mod input;
+
+use error::{TransitError, TransitResult, ErrorExt};
 
 use display::{Display, DisplayContext, DisplayMode, StateEvent};
 use display::fsm::DisplayFiniteStateMachine;
@@ -26,24 +28,23 @@ use transit::state::TransitStateManager;
 
 use input::{InputEvent, InputHandler};
 
-#[cfg(target_os = "macos")]
-use input::KeyboardInput;
-
-#[cfg(target_os = "linux")]
+use input::{KeyboardInput, InputType};
 use input::flic::FlicButton;
 
 pub type SharedTransitStateManager = Arc<RwLock<TransitStateManager>>;
 pub type SharedDisplayFiniteStateMachine = Arc<RwLock<DisplayFiniteStateMachine>>;
 
-#[cfg(target_os = "macos")]
-async fn create_input_handler() -> Result<Box<dyn InputHandler + Send>, Box<dyn Error>> {
-    Ok(Box::new(KeyboardInput::new()))
-}
-
-#[cfg(target_os = "linux")]
-async fn create_input_handler() -> Result<Box<dyn InputHandler + Send>, Box<dyn Error>> {
-    let flic = FlicButton::new().await?;
-    Ok(Box::new(flic))
+async fn create_input_handler(input_type: InputType) -> TransitResult<Box<dyn InputHandler + Send>> {
+    match input_type {
+        InputType::Keyboard => {
+            let keyboard = KeyboardInput::new();
+            Ok(Box::new(keyboard))
+        },
+        InputType::Flic => {
+            let button = FlicButton::new().await?;
+            Ok(Box::new(button))
+        }
+    }
 }
 
 fn console_display(display_mode: &DisplayMode, page_idx: usize, subpage_idx: usize) {
@@ -66,9 +67,9 @@ fn console_display(display_mode: &DisplayMode, page_idx: usize, subpage_idx: usi
         DisplayMode::CustomMessage { message, start_time, previous_state } => {
             println!("{}", message);
         },
-        DisplayMode::Error { message, start_time } => {
+        DisplayMode::Error { message, .. } => {
             println!("Error: {}", message);
-        },
+        }
     }
 }
 
@@ -198,7 +199,7 @@ fn run_display_loop(display_fsm: SharedDisplayFiniteStateMachine) {
 }
 
 async fn input_handler_task(display_fsm: SharedDisplayFiniteStateMachine) {
-    let mut input_handler = create_input_handler().await.expect("Failed to create input handler");
+    let mut input_handler = display_fsm.read().await.get_input_handler().await;
     loop {
         let event = input_handler.listen().await.expect("Failed to listen for input");
         {
@@ -222,7 +223,7 @@ async fn input_handler_task(display_fsm: SharedDisplayFiniteStateMachine) {
 }
     
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> TransitResult<()> {
     // Initialize logging
     env_logger::init();
     
@@ -250,7 +251,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Press Ctrl+C to exit");
 
     // Create the runtime for async tasks
-    let rt = tokio::runtime::Runtime::new()?;
+    let rt = tokio::runtime::Runtime::new().context("Failed to create runtime")?;
 
     // Spawn background tasks
     rt.spawn(transit_update_task(shared_transit_manager.clone(), shared_display_fsm.clone()));

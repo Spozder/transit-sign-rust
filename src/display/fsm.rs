@@ -5,6 +5,8 @@ use std::error::Error;
 use crate::config::DisplayConfig;
 use super::{Color, DisplayMode, StateEvent};
 use crate::transit::{TransitIdentifier, TransitState};
+use crate::input::{InputHandler, InputType};
+use crate::create_input_handler;
 
 use super::super::SharedTransitStateManager;
 
@@ -33,6 +35,10 @@ impl DisplayFiniteStateMachine {
             subpage_idx: 0,
             transit_manager
         }
+    }
+
+    pub async fn get_input_handler(&self) -> Box<dyn InputHandler + Send> {
+        create_input_handler(self.config.input_type).await.expect("Failed to create input handler")
     }
 
     pub async fn handle_event(&mut self, event: StateEvent) {

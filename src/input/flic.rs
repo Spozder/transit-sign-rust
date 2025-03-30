@@ -5,6 +5,7 @@ use std::error::Error;
 use async_trait::async_trait;
 
 use super::{InputEvent, InputHandler};
+use crate::error::{TransitError, TransitResult};
 
 // Flic button implementation
 pub struct FlicButton {
@@ -20,11 +21,11 @@ impl FlicButton {
 
 #[async_trait]
 impl InputHandler for FlicButton {
-    async fn listen(&mut self) -> Result<InputEvent, Box<dyn Error + Send>> {
+    async fn listen(&mut self) -> TransitResult<InputEvent> {
         // Read from TCP stream and parse flicd protocol
         // This is a simplified example - actual implementation would need to match flicd's protocol
         let mut buf = [0u8; 64];
-        self.stream.read(&mut buf).await.map_err(|e| Box::new(e) as Box<dyn Error + Send>)?;
+        self.stream.read(&mut buf).await.map_err(|e| TransitError::Io(e))?;
 
         // Parse the flicd protocol and return appropriate event
         // This is placeholder logic - would need actual protocol implementation
@@ -36,7 +37,7 @@ impl InputHandler for FlicButton {
         }
     }
 
-    async fn cleanup(&mut self) -> Result<(), Box<dyn Error + Send>> {
+    async fn cleanup(&mut self) -> TransitResult<()> {
         // Close connection to flicd
         Ok(())
     }

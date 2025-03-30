@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-use crate::config::Stop;
+use crate::{config::Stop, error::{TransitError, TransitResult}};
 use super::{Prediction, TransitProvider, TransitState};
 use crate::display::Color;
 
@@ -121,7 +121,7 @@ impl TransitProvider for MuniProvider {
         "Muni"
     }
 
-    async fn get_updates(&self, stop: Stop) -> anyhow::Result<TransitState> {
+    async fn get_updates(&self, stop: Stop) -> TransitResult<TransitState> {
         let url = format!(
             "https://api.511.org/transit/StopMonitoring?api_key={}&agency=SF&stopCode={}&format=json",
             self.api_key, stop.id
@@ -133,10 +133,10 @@ impl TransitProvider for MuniProvider {
             .await?;
         
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!(
+            return Err(TransitError::ApiRequestFailed(format!(
                 "Muni API returned error status: {}",
                 response.status()
-            ));
+            )));
         }
 
         let bytes = response.bytes().await?;
@@ -148,12 +148,12 @@ impl TransitProvider for MuniProvider {
             .unwrap_or(&response_text)
             .trim();
         
-        let siri_data: SiriResponse = serde_json::from_str(cleaned_text)?;
+        let siri_data: SiriResponse = serde_json::from_str(cleaned_text).map_err(TransitError::from)?;
         let mut predictions = Vec::new();
         
         for visit in &siri_data.ServiceDelivery.StopMonitoringDelivery.MonitoredStopVisit {
             let journey = &visit.MonitoredVehicleJourney;
-            let arrival_time = chrono::DateTime::parse_from_rfc3339(&journey.MonitoredCall.ExpectedArrivalTime)?;
+            let arrival_time = chrono::DateTime::parse_from_rfc3339(&journey.MonitoredCall.ExpectedArrivalTime).map_err(TransitError::from)?;
             let now = Utc::now();
             let duration = arrival_time.signed_duration_since(now);
             let minutes = duration.num_minutes();

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::error::Error;
+use crate::error::{TransitError, TransitResult};
 use log::debug;
 use futures::future::try_join_all;
 use crate::config::{Config, Stop};
@@ -8,12 +8,12 @@ use super::{TransitIdentifier, TransitProvider, TransitState};
 pub async fn get_state_for_stops<'a, T: TransitProvider>(
     provider: &'a T,
     stops: &'a [Stop],
-) -> Result<Vec<TransitState>, Box<dyn Error + Send + Sync>> {
+) -> TransitResult<Vec<TransitState>> {
     let futures: Vec<_> = stops
         .iter()
         .map(|stop| async move {
             let updates = provider.get_updates(stop.clone()).await?;
-            Ok::<_, Box<dyn Error + Send + Sync>>(updates)
+            Ok::<_, TransitError>(updates)
         })
         .collect();
 
@@ -47,9 +47,9 @@ impl TransitStateManager {
     }
 
     async fn fetch_all<'a>(&'a self) -> (
-        Result<Vec<TransitState>, Box<dyn Error + Send + Sync>>,
-        Result<Vec<TransitState>, Box<dyn Error + Send + Sync>>,
-        Result<Vec<TransitState>, Box<dyn Error + Send + Sync>>,
+        TransitResult<Vec<TransitState>>,
+        TransitResult<Vec<TransitState>>,
+        TransitResult<Vec<TransitState>>,
     ) {
         tokio::join!(
             async {

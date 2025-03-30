@@ -14,6 +14,7 @@ use embedded_graphics::{
 };
 
 use crate::config::Stop;
+use crate::error::{TransitError, TransitResult};
 use crate::display::{Color, Display, DisplayContext};
 
 #[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
@@ -278,7 +279,7 @@ impl TransitState {
 
 #[async_trait]
 pub trait TransitProvider {
-    async fn get_updates(&self, stop: Stop) -> anyhow::Result<TransitState>;
+    async fn get_updates(&self, stop: Stop) -> TransitResult<TransitState>;
     fn name(&self) -> &'static str;
 }
 

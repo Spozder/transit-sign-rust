@@ -1,8 +1,11 @@
+use std::num::ParseIntError;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::config::Stop;
+use crate::error::{TransitError, TransitResult};
 use super::{Prediction, TransitProvider, TransitState};
 use crate::display::Color;
 
@@ -54,14 +57,14 @@ impl TransitProvider for BartProvider {
         "BART"
     }
 
-    async fn get_updates(&self, stop: Stop) -> anyhow::Result<TransitState> {
+    async fn get_updates(&self, stop: Stop) -> TransitResult<TransitState> {
         let url = format!(
             "https://api.bart.gov/api/etd.aspx?cmd=etd&orig={}&key={}&json=y",
             stop.id, self.api_key
         );
 
-        let response = self.client.get(&url).send().await?;
-        let bart_data: BartResponse = response.json().await?;
+        let response = self.client.get(&url).send().await.map_err(TransitError::from)?;
+        let bart_data: BartResponse = response.json().await.map_err(TransitError::from)?;
         
         let mut predictions = Vec::new();
         
@@ -71,7 +74,7 @@ impl TransitProvider for BartProvider {
                     let minutes = if estimate.minutes == "Leaving" {
                         0
                     } else {
-                        estimate.minutes.parse()?
+                        estimate.minutes.parse().map_err(|err: ParseIntError| TransitError::ApiResponseInvalid(err.to_string()))?
                     };
 
                     predictions.push(Prediction {

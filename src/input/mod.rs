@@ -3,9 +3,18 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use async_trait::async_trait;
 use crate::display::StateEvent;
+use crate::error::{TransitError, TransitResult};
 
-#[cfg(target_os = "linux")]
 pub mod flic;
+
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InputType {
+    Keyboard,
+    Flic,
+}
 
 // Common event type for all input methods
 #[derive(Debug, Clone)]
@@ -17,8 +26,8 @@ pub enum InputEvent {
 
 #[async_trait]
 pub trait InputHandler {
-    async fn listen(&mut self) -> Result<InputEvent, Box<dyn Error + Send>>;
-    async fn cleanup(&mut self) -> Result<(), Box<dyn Error + Send>>;
+    async fn listen(&mut self) -> TransitResult<InputEvent>;
+    async fn cleanup(&mut self) -> TransitResult<()>;
 }
 
 pub struct KeyboardInput {
@@ -35,9 +44,9 @@ impl KeyboardInput {
 
 #[async_trait]
 impl InputHandler for KeyboardInput {
-    async fn listen(&mut self) -> Result<InputEvent, Box<dyn Error + Send>> {
+    async fn listen(&mut self) -> TransitResult<InputEvent> {
         let mut buf = [0u8; 1];
-        self.stdin.read_exact(&mut buf).await.map_err(|e| Box::new(e) as Box<dyn Error + Send>)?;
+        self.stdin.read_exact(&mut buf).await.map_err(|e| TransitError::Io(e))?;
 
         // Handle key press, ignore other keys
         match buf[0] {
@@ -48,7 +57,7 @@ impl InputHandler for KeyboardInput {
         }
     }
 
-    async fn cleanup(&mut self) -> Result<(), Box<dyn Error + Send>> {
+    async fn cleanup(&mut self) -> TransitResult<()> {
         Ok(()) // Nothing to clean up for keyboard
     }
 }

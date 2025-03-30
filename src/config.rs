@@ -5,6 +5,9 @@ use std::time::Duration;
 
 use crate::transit::TransitIdentifier;
 use crate::display::PageDisplayHandler;
+use crate::input::InputType;
+
+use crate::error::{TransitError, TransitResult, ErrorExt};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Stop {
@@ -38,9 +41,11 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        let config_str = fs::read_to_string("config.toml")?;
-        let mut config: Config = toml::from_str(&config_str)?;
+    pub fn load() -> TransitResult<Self> {
+        let config_str = fs::read_to_string("config.toml")
+            .context("Failed to read config.toml")?;
+        let mut config: Config = toml::from_str(&config_str)
+            .context("Failed to parse config.toml")?;
 
         config.bart.init();
         config.muni.init();
@@ -55,6 +60,12 @@ pub struct DisplayConfig {
     pub message_timeout: Duration,
     pub error_timeout: Duration,
     pub pages: Vec<PageDefinition>,
+    #[serde(default = "default_input_type")]
+    pub input_type: InputType,
+}
+
+fn default_input_type() -> InputType {
+    InputType::Keyboard
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,24 +86,11 @@ impl SubpageDefinition {
 }
 
 impl DisplayConfig {
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        let config_str = fs::read_to_string("display.toml")?;
-        
-        match toml::from_str::<DisplayConfig>(&config_str) {
-            Ok(config) => Ok(config),
-            Err(e) => {
-                println!("Error parsing display.toml:");
-                println!("Error details: {:#?}", e);
-                println!("Error message: {}", e);
-                
-                // Print the TOML content with line numbers for reference
-                println!("\nTOML content with line numbers:");
-                for (i, line) in config_str.lines().enumerate() {
-                    println!("{:3}: {}", i + 1, line);
-                }
-                
-                Err(Box::new(e))
-            }
-        }
+    pub fn load() -> TransitResult<Self> {
+        let config_str = fs::read_to_string("display.toml")
+            .context("Failed to read display.toml")?;
+
+        toml::from_str::<DisplayConfig>(&config_str)
+            .context("Failed to parse display.toml")
     }
 }

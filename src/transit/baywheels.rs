@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-use crate::config::Stop;
+use crate::{config::Stop, error::{TransitError, TransitResult}};
 use super::{BikeInventory, TransitProvider, TransitState};
 
 const EBIKES_API_URL: &str = "https://gbfs.lyft.com/gbfs/1.1/bay/fr/ebikes_at_stations.json";
@@ -80,7 +80,7 @@ impl TransitProvider for BayWheelsProvider {
         "Bay Wheels"
     }
 
-    async fn get_updates(&self, stop: Stop) -> anyhow::Result<TransitState> {
+    async fn get_updates(&self, stop: Stop) -> TransitResult<TransitState> {
         // Fetch both ebike and station status data concurrently
         let client = self.client.clone();
         let ebike_handle = tokio::spawn(async move {
@@ -95,14 +95,14 @@ impl TransitProvider for BayWheelsProvider {
         });
 
         // Wait for both requests to complete and handle errors
-        let ebike_response = ebike_handle.await.map_err(|e| anyhow::anyhow!("Task failed: {}", e))??;
-        let status_response = status_handle.await.map_err(|e| anyhow::anyhow!("Task failed: {}", e))??;
+        let ebike_response = ebike_handle.await.map_err(TransitError::from)??;
+        let status_response = status_handle.await.map_err(TransitError::from)??;
 
         // Get station status first
         let station_status = status_response.data.stations
             .iter()
             .find(|s| s.station_id == stop.id)
-            .ok_or_else(|| anyhow::anyhow!("Station not found: {}", stop.id))?;
+            .ok_or_else(|| TransitError::TransitConfigError(format!("Station not found: {}", stop.id)))?;
 
         // Get ebike data if available
         let ebike_station_id = format!("motivate_SFO_{}", stop.id);
