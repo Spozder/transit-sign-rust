@@ -285,52 +285,73 @@ impl FlicButton {
     
     // Helper to parse a Flic event packet
     fn parse_event(&mut self, buf: &[u8]) -> Option<InputEvent> {
-        if buf.len() < 10 {  // Minimum packet size
+        // Check for minimum viable packet size (opcode + conn_id)
+        if buf.len() < 5 {
             println!("parse_event: Packet too small: {} bytes", buf.len());
             return None;
         }
         
         let opcode = buf[0];
-        println!("parse_event: Parsing event with opcode: {}", opcode);
+        println!("parse_event: Parsing event with opcode: 0x{:02x} ({})", opcode, opcode);
         
         // Check if the connection ID matches
-        if buf.len() >= 5 {
-            let conn_id_bytes = [buf[1], buf[2], buf[3], buf[4]];
-            let conn_id = u32::from_le_bytes(conn_id_bytes);
-            
-            println!("parse_event: Event for conn_id: {}", conn_id);
-            
-            if conn_id != self.conn_id {
-                println!("parse_event: Not for our connection (our conn_id: {})", self.conn_id);
-                return None;  // Not for our connection
-            }
+        let conn_id_bytes = [buf[1], buf[2], buf[3], buf[4]];
+        let conn_id = u32::from_le_bytes(conn_id_bytes);
+        
+        println!("parse_event: Event for conn_id: {} (our conn_id: {})", conn_id, self.conn_id);
+        
+        if conn_id != self.conn_id {
+            println!("parse_event: Not for our connection");
+            return None;  // Not for our connection
         }
         
         match opcode {
             EVT_BUTTON_EVENT => {
-                println!("parse_event: Button event, click_type: {}", buf[5]);
-                // We're only interested in button down events
-                if buf[5] == BUTTON_DOWN {
-                    println!("parse_event: BUTTON_DOWN detected");
-                    Some(InputEvent::SinglePress)
-                } else {
-                    None
+                if buf.len() < 6 {
+                    println!("parse_event: Button event packet too small");
+                    return None;
+                }
+                
+                let click_type = buf[5];
+                println!("parse_event: Button event, click_type: {}", click_type);
+                
+                // We're interested in all button events
+                match click_type {
+                    BUTTON_DOWN => {
+                        println!("parse_event: BUTTON_DOWN detected");
+                        Some(InputEvent::SinglePress)
+                    },
+                    BUTTON_UP => {
+                        println!("parse_event: BUTTON_UP detected - ignoring");
+                        None
+                    },
+                    _ => {
+                        println!("parse_event: Unknown click type: {}", click_type);
+                        None
+                    }
                 }
             },
             EVT_CONNECTION_STATUS_CHANGED => {
-                println!("parse_event: Connection status changed event, status: {}", buf[5]);
+                if buf.len() < 6 {
+                    println!("parse_event: Status change packet too small");
+                    return None;
+                }
+                
+                let status = buf[5];
+                println!("parse_event: Connection status changed event, status: {}", status);
+                
                 // Update our connection status
-                if buf[5] == READY {
+                if status == READY {
                     println!("parse_event: Connection is now READY");
                     self.connected = true;
-                } else if buf[5] == DISCONNECTED {
+                } else if status == DISCONNECTED {
                     println!("parse_event: Connection is now DISCONNECTED");
                     self.connected = false;
                 }
                 None
             },
             _ => {
-                println!("parse_event: Unknown opcode: {}", opcode);
+                println!("parse_event: Unknown or unhandled opcode: 0x{:02x}", opcode);
                 None
             },
         }
