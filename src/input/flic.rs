@@ -418,19 +418,20 @@ impl FlicButton {
     async fn test_connection(&mut self) -> Result<(), io::Error> {
         println!("test_connection: Sending GetInfo command");
         
-        // Try a direct, low-level approach for debugging
+        // Using low-level approach for debugging clarity
         println!("test_connection: Using low-level approach for debugging");
         
-        // GetInfo is just a single byte command
-        let cmd_len = 1u16;
-        let mut packet = Vec::with_capacity(3);
-        packet.push((cmd_len & 0xff) as u8);  // Length byte 1 (little endian)
-        packet.push((cmd_len >> 8) as u8);    // Length byte 2 (little endian)
-        packet.push(CMD_GET_INFO);            // Command byte
+        // Create the GetInfo command packet
+        let cmd = [CMD_GET_INFO, 0x00, 0x00];
+        println!("test_connection: Raw bytes to send: {}", format_bytes(&cmd));
+                
+        // Send it as raw bytes with 2-byte length prefix
+        let cmd_len = cmd.len() as u16;
+        let mut packet = Vec::with_capacity(2 + cmd.len());
+        packet.push((cmd_len & 0xff) as u8);
+        packet.push((cmd_len >> 8) as u8);
+        packet.extend_from_slice(&cmd);
         
-        println!("test_connection: Raw bytes to send: {}", format_bytes(&packet));
-        
-        // Send the command directly
         self.stream.write_all(&packet).await?;
         self.stream.flush().await?;
         println!("test_connection: Command sent, starting read loop");
@@ -443,23 +444,23 @@ impl FlicButton {
         match tokio::time::timeout(Duration::from_secs(2), self.stream.read(&mut read_buf)).await {
             Ok(Ok(n)) if n > 0 => {
                 println!("test_connection: Read {} bytes: {}", n, format_bytes(&read_buf[0..n]));
-                self.connected = true;
+                // Don't set self.connected here - it should only be set when a connection channel is established
                 Ok(())
             },
             Ok(Ok(_)) => {
                 println!("test_connection: Read 0 bytes (connection closed by peer)");
-                self.connected = false;
+                // Don't set self.connected here
                 Err(io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed by peer"))
             },
             Ok(Err(e)) => {
                 println!("test_connection: Error reading response: {}", e);
-                self.connected = false;
+                // Don't set self.connected here
                 Err(e)
             },
             Err(_) => {
                 println!("test_connection: Timeout reading response");
                 // Even if we time out, we'll consider the daemon alive if we could send data
-                self.connected = true;
+                // Don't set self.connected here - it should only be set when a connection channel is established
                 Ok(())
             }
         }
