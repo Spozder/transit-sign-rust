@@ -336,7 +336,7 @@ impl FlicButton {
                     println!("parse_event: Button event, click_type: {:?}, was_queued: {}", evt.click_type, evt.was_queued);
                     
                     match evt.click_type {
-                        ClickType::ButtonClick => {
+                        ClickType::ButtonSingleClick => {
                             println!("parse_event: BUTTON_CLICK detected");
                             Some(InputEvent::SinglePress)
                         },

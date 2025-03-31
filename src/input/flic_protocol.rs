@@ -419,6 +419,10 @@ impl EvtButtonEvent {
         let click_type = match bytes[5] {
             0 => ClickType::ButtonDown,
             1 => ClickType::ButtonUp,
+            2 => ClickType::ButtonClick,
+            3 => ClickType::ButtonSingleClick,
+            4 => ClickType::ButtonDoubleClick,
+            5 => ClickType::ButtonHold,
             _ => return None,
         };
         
