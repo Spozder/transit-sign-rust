@@ -20,7 +20,7 @@ const CMD_REMOVE_CONNECTION_CHANNEL: u8 = 0x04;
 const EVT_GET_INFO_RESPONSE: u8 = 0x09;  // 9 decimal
 const EVT_CREATE_CONNECTION_CHANNEL_RESPONSE: u8 = 0x01;  // 1 decimal
 const EVT_CONNECTION_STATUS_CHANGED: u8 = 0x0B;  // 11 decimal
-const EVT_BUTTON_EVENT: u8 = 0x0D;  // 13 decimal
+const EVT_BUTTON_EVENT: u8 = 0x04;  // 13 decimal
 
 // Click types
 const BUTTON_DOWN: u8 = 0x01;
