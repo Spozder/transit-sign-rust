@@ -271,10 +271,7 @@ impl FlicButton {
                     ));
                 }
                 
-                // Now wait for connection status to change to READY
-                println!("create_connection_channel: Waiting for READY status");
-                self.wait_for_ready_status().await?;
-                
+                // Connection channel created successfully - set connected immediately
                 println!("create_connection_channel: Connection channel created successfully");
                 self.connected = true;
                 Ok(())
@@ -283,81 +280,6 @@ impl FlicButton {
                 println!("create_connection_channel: Failed to create connection channel: {}", e);
                 Err(e)
             }
-        }
-    }
-    
-    // Wait for the connection status to change to READY
-    async fn wait_for_ready_status(&mut self) -> Result<(), io::Error> {
-        println!("wait_for_ready_status: Waiting for connection status to change to READY");
-        
-        // Set a timeout for waiting
-        let start_time = Instant::now();
-        let timeout = Duration::from_secs(10);
-        
-        while !self.connected && start_time.elapsed() < timeout {
-            println!("wait_for_ready_status: Reading packet");
-            
-            // Read the length prefix (2 bytes)
-            let mut len_buf = [0u8; 2];
-            self.stream.read_exact(&mut len_buf).await?;
-            
-            // Convert the length bytes to a u16 (little endian)
-            let packet_len = u16::from_le_bytes(len_buf) as usize;
-            println!("wait_for_ready_status: Received packet with length: {}", packet_len);
-            println!("wait_for_ready_status: Length bytes: {}", format_bytes(&len_buf));
-            
-            if packet_len == 0 || packet_len > 1024 {
-                println!("wait_for_ready_status: Invalid packet length: {}", packet_len);
-                continue;
-            }
-            
-            // Read the packet body
-            let mut packet = vec![0u8; packet_len];
-            self.stream.read_exact(&mut packet).await?;
-            
-            println!("wait_for_ready_status: Received packet: {}", format_bytes(&packet));
-            
-            // Check if it's a connection status changed event
-            if packet.len() > 0 && packet[0] == EVT_CONNECTION_STATUS_CHANGED {
-                // Extract the connection ID
-                let conn_id = if packet.len() >= 5 {
-                    let mut id_bytes = [0u8; 4];
-                    id_bytes.copy_from_slice(&packet[1..5]);
-                    u32::from_le_bytes(id_bytes)
-                } else {
-                    0
-                };
-                
-                println!("wait_for_ready_status: Event for connection ID: {}", conn_id);
-                // Check if this event is for our connection
-                if conn_id == self.conn_id && packet.len() >= 6 {
-                    let status = packet[5];
-                    println!("wait_for_ready_status: Connection status changed to: {}", status);
-                    
-                    if status == READY {
-                        println!("wait_for_ready_status: Connection is now READY");
-                        self.connected = true;
-                        return Ok(());
-                    }
-                }
-            } else {
-                println!("wait_for_ready_status: Received non-connection-status event: opcode={}", 
-                          if !packet.is_empty() { packet[0] } else { 0xff });
-            }
-            
-            // Short delay before next read
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        
-        if self.connected {
-            println!("wait_for_ready_status: Connection is already READY");
-            Ok(())
-        } else {
-            println!("wait_for_ready_status: Timeout waiting for READY status");
-            Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "Timeout waiting for connection to become READY"
-            ))
         }
     }
     
