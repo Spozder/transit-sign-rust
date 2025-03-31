@@ -496,36 +496,59 @@ impl InputHandler for FlicButton {
         
         println!("listen: Starting to listen for button events");
         
-        // Buffer to read protocol data
-        let mut buf = [0u8; 64];
-        
         loop {
             println!("listen: Waiting for data from Flic daemon");
             
-            // Read from TCP stream
-            let bytes_read = self.stream.read(&mut buf).await.map_err(|e| TransitError::Io(e))?;
-            
-            println!("listen: Received {} bytes: {}", 
-                     bytes_read, 
-                     format_bytes(&buf[..bytes_read]));
-            
-            if bytes_read == 0 {
-                println!("listen: Connection closed, reconnecting");
-                // Connection closed, try to reconnect
-                self.stream = TcpStream::connect("127.0.0.1:5551").await.map_err(|e| TransitError::Io(e))?;
-                self.connected = false;
-                self.create_connection_channel().await.map_err(|e| TransitError::Io(e))?;
-                continue;
+            // First, read the 2-byte length prefix
+            let mut len_bytes = [0u8; 2];
+            match self.stream.read_exact(&mut len_bytes).await {
+                Ok(_) => {
+                    // Convert the length bytes to a u16 (little-endian)
+                    let length = u16::from_le_bytes(len_bytes);
+                    println!("listen: Read packet length prefix: {} bytes", length);
+                    
+                    // Now read the exact payload size
+                    let mut payload = vec![0u8; length as usize];
+                    match self.stream.read_exact(&mut payload).await {
+                        Ok(_) => {
+                            println!("listen: Read packet payload: {}", format_bytes(&payload));
+                            
+                            // Try to parse the event
+                            if let Some(event) = self.parse_event(&payload) {
+                                println!("listen: Parsed valid event: {:?}", event);
+                                return Ok(event);
+                            }
+                            
+                            println!("listen: No valid event found, continuing to listen");
+                            // If we couldn't parse a valid event, continue reading
+                        },
+                        Err(e) => {
+                            println!("listen: Error reading payload: {}", e);
+                            if e.kind() == io::ErrorKind::UnexpectedEof {
+                                // Connection closed, try to reconnect
+                                println!("listen: Connection closed, reconnecting");
+                                self.stream = TcpStream::connect("127.0.0.1:5551").await.map_err(|e| TransitError::Io(e))?;
+                                self.connected = false;
+                                self.create_connection_channel().await.map_err(|e| TransitError::Io(e))?;
+                            } else {
+                                return Err(TransitError::Io(e));
+                            }
+                        }
+                    }
+                },
+                Err(e) => {
+                    println!("listen: Error reading length prefix: {}", e);
+                    if e.kind() == io::ErrorKind::UnexpectedEof {
+                        // Connection closed, try to reconnect
+                        println!("listen: Connection closed, reconnecting");
+                        self.stream = TcpStream::connect("127.0.0.1:5551").await.map_err(|e| TransitError::Io(e))?;
+                        self.connected = false;
+                        self.create_connection_channel().await.map_err(|e| TransitError::Io(e))?;
+                    } else {
+                        return Err(TransitError::Io(e));
+                    }
+                }
             }
-            
-            // Try to parse the event
-            if let Some(event) = self.parse_event(&buf[..bytes_read]) {
-                println!("listen: Parsed valid event: {:?}", event);
-                return Ok(event);
-            }
-            
-            println!("listen: No valid event found, continuing to listen");
-            // If we couldn't parse a valid event, continue reading
         }
     }
 
