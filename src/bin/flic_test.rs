@@ -44,10 +44,8 @@ fn socket_ready_for_reading(fd: RawFd, timeout_secs: i32) -> bool {
     
     // Check if our socket is ready
     if result > 0 {
-        // FD_ISSET returns a non-zero integer if the fd is in the set
-        // Convert this to a bool by comparing with 0
-        let is_set = unsafe { libc::FD_ISSET(fd, &read_fds) };
-        return is_set > 0;
+        // In Rust bindings, FD_ISSET returns a bool directly
+        return unsafe { libc::FD_ISSET(fd, &read_fds) };
     }
     
     false
