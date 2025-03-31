@@ -12,15 +12,15 @@ use crate::error::{TransitError, TransitResult};
 
 // Constants for Flic protocol
 // Command opcodes
-const CMD_GET_INFO: u8 = 0x01;
+const CMD_GET_INFO: u8 = 0x00;
 const CMD_CREATE_CONNECTION_CHANNEL: u8 = 0x03;
 const CMD_REMOVE_CONNECTION_CHANNEL: u8 = 0x04;
 
 // Event opcodes
-const EVT_GET_INFO_RESPONSE: u8 = 0x16;  // 22 decimal - Corrected based on logs
-const EVT_CREATE_CONNECTION_CHANNEL_RESPONSE: u8 = 0x07;  // 7 decimal - Corrected based on logs
-const EVT_CONNECTION_STATUS_CHANGED: u8 = 0x0B;  // 11 decimal, based on protocol docs
-const EVT_BUTTON_EVENT: u8 = 0x0D;  // 13 decimal, based on protocol docs
+const EVT_GET_INFO_RESPONSE: u8 = 0x09;  // 9 decimal
+const EVT_CREATE_CONNECTION_CHANNEL_RESPONSE: u8 = 0x01;  // 1 decimal
+const EVT_CONNECTION_STATUS_CHANGED: u8 = 0x0B;  // 11 decimal
+const EVT_BUTTON_EVENT: u8 = 0x0D;  // 13 decimal
 
 // Click types
 const BUTTON_DOWN: u8 = 0x01;
