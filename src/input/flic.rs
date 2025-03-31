@@ -129,7 +129,7 @@ impl FlicButton {
         println!("create_connection_channel: Creating connection channel for button {:?}", format_bytes(&self.button_addr));
         
         // Prepare the command packet
-        let mut cmd = Vec::with_capacity(16);
+        let mut cmd = Vec::with_capacity(14);
         cmd.push(CMD_CREATE_CONNECTION_CHANNEL);
         
         // Connection ID (4 bytes, little endian)
@@ -144,10 +144,17 @@ impl FlicButton {
         // Auto disconnect time (2 bytes, little endian) - 511 means never disconnect
         cmd.extend_from_slice(&(511u16).to_le_bytes());
         
-        println!("create_connection_channel: Sending command packet: {}", format_bytes(&cmd));
+        // Add length prefix (2 bytes, little endian)
+        let cmd_len = cmd.len() as u16;
+        let mut packet = Vec::with_capacity(2 + cmd_len as usize);
+        packet.push(cmd_len as u8);
+        packet.push((cmd_len >> 8) as u8);
+        packet.extend_from_slice(&cmd);
+        
+        println!("create_connection_channel: Sending command packet with length prefix: {}", format_bytes(&packet));
         
         // Send the command
-        self.stream.write_all(&cmd).await?;
+        self.stream.write_all(&packet).await?;
         println!("create_connection_channel: Command sent, waiting for response");
         
         // Set a read timeout for the stream
@@ -387,8 +394,14 @@ impl FlicButton {
         // Prepare the command packet - GetInfo is just a single byte
         let cmd = [CMD_GET_INFO];
         
+        // Add length prefix (2 bytes, little endian)
+        let mut packet = Vec::with_capacity(3);
+        packet.push(1); // Length low byte
+        packet.push(0); // Length high byte
+        packet.push(CMD_GET_INFO);
+        
         // Send the command
-        self.stream.write_all(&cmd).await?;
+        self.stream.write_all(&packet).await?;
         println!("test_connection: Command sent, waiting for response");
         
         // Wait for response with timeout
@@ -455,10 +468,17 @@ impl FlicButton {
         // Connection ID (4 bytes, little endian)
         cmd.extend_from_slice(&self.conn_id.to_le_bytes());
         
-        println!("remove_connection_channel: Sending command: {}", format_bytes(&cmd));
+        // Add length prefix (2 bytes, little endian)
+        let cmd_len = cmd.len() as u16;
+        let mut packet = Vec::with_capacity(2 + cmd_len as usize);
+        packet.push(cmd_len as u8);
+        packet.push((cmd_len >> 8) as u8);
+        packet.extend_from_slice(&cmd);
+        
+        println!("remove_connection_channel: Sending command: {}", format_bytes(&packet));
         
         // Send the command
-        self.stream.write_all(&cmd).await?;
+        self.stream.write_all(&packet).await?;
         
         println!("remove_connection_channel: Connection channel removed");
         Ok(())
