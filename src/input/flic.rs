@@ -404,7 +404,19 @@ impl FlicButton {
 
 #[async_trait]
 impl InputHandler for FlicButton {
-    async fn listen(&mut self) -> TransitResult<InputEvent> {        
+    async fn listen(&mut self) -> TransitResult<InputEvent> {
+        // Print stream information for debugging
+        match self.stream.peer_addr() {
+            Ok(peer_addr) => println!("listen: Connected to peer address: {}", peer_addr),
+            Err(e) => println!("listen: Could not get peer address: {}", e),
+        }
+        
+        match self.stream.local_addr() {
+            Ok(local_addr) => println!("listen: Local address: {}", local_addr),
+            Err(e) => println!("listen: Could not get local address: {}", e),
+        }
+        
+        println!("listen: Stream connection state: connected={}", self.connected);
         println!("listen: Starting to listen for button events");
         
         loop {
@@ -412,8 +424,13 @@ impl InputHandler for FlicButton {
             
             // First, read the 2-byte length prefix
             let mut len_bytes = [0u8; 2];
-            match self.stream.read_exact(&mut len_bytes).await {
-                Ok(_) => {
+            let read_result = tokio::time::timeout(
+                tokio::time::Duration::from_secs(5),
+                self.stream.read_exact(&mut len_bytes)
+            ).await;
+
+            match read_result {
+                Ok(Ok(_)) => {
                     // Convert the length bytes to a u16 (little-endian)
                     let length = u16::from_le_bytes(len_bytes);
                     println!("listen: Read packet length prefix: {} bytes", length);
@@ -447,17 +464,11 @@ impl InputHandler for FlicButton {
                         }
                     }
                 },
-                Err(e) => {
-                    println!("listen: Error reading length prefix: {}", e);
-                    if e.kind() == io::ErrorKind::UnexpectedEof {
-                        // Connection closed, try to reconnect
-                        println!("listen: Connection closed, reconnecting");
-                        self.stream = TcpStream::connect("127.0.0.1:5551").await.map_err(|e| TransitError::Io(e))?;
-                        self.connected = false;
-                        self.create_connection_channel().await.map_err(|e| TransitError::Io(e))?;
-                    } else {
-                        return Err(TransitError::Io(e));
-                    }
+                Ok(Err(e)) => {
+                    println!("listen: Error reading from stream: {}", e);
+                }
+                Err(_) => {
+                    println!("listen: Timeout waiting for data from Flic daemon");
                 }
             }
         }
