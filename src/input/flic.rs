@@ -184,7 +184,16 @@ impl FlicButton {
         // Test the connection with a simple command
         println!("FlicButton::new: Testing connection with GetInfo command");
         match button.test_connection().await {
-            Ok(_) => println!("FlicButton::new: GetInfo command successful"),
+            Ok(_) => {
+                println!("FlicButton::new: GetInfo command successful");
+                
+                // Now try to create a connection channel
+                println!("FlicButton::new: Creating connection channel");
+                match button.create_connection_channel().await {
+                    Ok(_) => println!("FlicButton::new: Connection channel created successfully"),
+                    Err(e) => println!("FlicButton::new: Failed to create connection channel: {}", e),
+                }
+            },
             Err(e) => println!("FlicButton::new: GetInfo command failed: {}", e),
         }
         
@@ -409,20 +418,47 @@ impl FlicButton {
     async fn test_connection(&mut self) -> Result<(), io::Error> {
         println!("test_connection: Sending GetInfo command");
         
-        // GetInfo is just a single byte command
-        let cmd = [CMD_GET_INFO];
+        // Try a direct, low-level approach for debugging
+        println!("test_connection: Using low-level approach for debugging");
         
-        // Use our generic command sender with expected response opcode
-        match self.send_command(&cmd, Some(EVT_GET_INFO_RESPONSE)).await {
-            Ok(response) => {
-                println!("test_connection: GetInfo command successful");
-                // We've successfully communicated with the daemon
+        // GetInfo is just a single byte command
+        let cmd_len = 1u16;
+        let mut packet = Vec::with_capacity(3);
+        packet.push((cmd_len & 0xff) as u8);  // Length byte 1 (little endian)
+        packet.push((cmd_len >> 8) as u8);    // Length byte 2 (little endian)
+        packet.push(CMD_GET_INFO);            // Command byte
+        
+        println!("test_connection: Raw bytes to send: {}", format_bytes(&packet));
+        
+        // Send the command directly
+        self.stream.write_all(&packet).await?;
+        self.stream.flush().await?;
+        println!("test_connection: Command sent, starting read loop");
+        
+        // Try to read anything that comes back (with a timeout)
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        
+        // Read whatever comes back for diagnostic purposes
+        let mut read_buf = [0u8; 1024];
+        match tokio::time::timeout(Duration::from_secs(2), self.stream.read(&mut read_buf)).await {
+            Ok(Ok(n)) if n > 0 => {
+                println!("test_connection: Read {} bytes: {}", n, format_bytes(&read_buf[0..n]));
                 self.connected = true;
                 Ok(())
             },
-            Err(e) => {
-                println!("test_connection: GetInfo command failed: {}", e);
-                // Even if GetInfo fails, we'll consider the daemon alive if we could send data
+            Ok(Ok(_)) => {
+                println!("test_connection: Read 0 bytes (connection closed by peer)");
+                self.connected = false;
+                Err(io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed by peer"))
+            },
+            Ok(Err(e)) => {
+                println!("test_connection: Error reading response: {}", e);
+                self.connected = false;
+                Err(e)
+            },
+            Err(_) => {
+                println!("test_connection: Timeout reading response");
+                // Even if we time out, we'll consider the daemon alive if we could send data
                 self.connected = true;
                 Ok(())
             }
