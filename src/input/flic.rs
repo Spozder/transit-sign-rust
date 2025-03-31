@@ -34,6 +34,54 @@ pub struct FlicButton {
 }
 
 impl FlicButton {
+    pub async fn new(button_addr_str: &str) -> Result<Self, io::Error> {
+        println!("FlicButton::new: Creating new FlicButton with address {}", button_addr_str);
+        
+        // Parse the button address (format: "xx:xx:xx:xx:xx:xx")
+        let button_addr = Self::parse_bd_addr(button_addr_str)?;
+        println!("FlicButton::new: Parsed button address: {}", format_bytes(&button_addr));
+        
+        // Connect to the Flic daemon
+        println!("FlicButton::new: Connecting to Flic daemon at 127.0.0.1:5551");
+        let mut stream = TcpStream::connect("127.0.0.1:5551").await?;
+        
+        // Set TCP_NODELAY to ensure packets are sent immediately
+        // This helps prevent buffering that can lead to connection issues
+        if let Err(e) = stream.set_nodelay(true) {
+            println!("FlicButton::new: Warning - Failed to set TCP_NODELAY: {}", e);
+        }
+        
+        println!("FlicButton::new: Connected to Flic daemon");
+        
+        // Use a simple connection ID
+        let conn_id = 1;
+        
+        let mut button = Self { 
+            stream,
+            conn_id,
+            button_addr,
+            connected: false,
+        };
+        
+        // Test the connection with a simple command
+        println!("FlicButton::new: Testing connection with GetInfo command");
+        match button.test_connection().await {
+            Ok(_) => {
+                println!("FlicButton::new: GetInfo command successful");
+                
+                // Now try to create a connection channel
+                println!("FlicButton::new: Creating connection channel");
+                match button.create_connection_channel().await {
+                    Ok(_) => println!("FlicButton::new: Connection channel created successfully"),
+                    Err(e) => println!("FlicButton::new: Failed to create connection channel: {}", e),
+                }
+            },
+            Err(e) => println!("FlicButton::new: GetInfo command failed: {}", e),
+        }
+        
+        Ok(button)
+    }
+
     // Generic method to send a command and read the response, matching C++ implementation
     async fn send_command(&mut self, cmd: &[u8], expected_resp_opcode: Option<u8>) -> Result<Vec<u8>, io::Error> {
         // Use the helper to add length prefix
@@ -112,54 +160,6 @@ impl FlicButton {
             Ok(Vec::new())
         }
     }
-
-    pub async fn new(button_addr_str: &str) -> Result<Self, io::Error> {
-        println!("FlicButton::new: Creating new FlicButton with address {}", button_addr_str);
-        
-        // Parse the button address (format: "xx:xx:xx:xx:xx:xx")
-        let button_addr = Self::parse_bd_addr(button_addr_str)?;
-        println!("FlicButton::new: Parsed button address: {}", format_bytes(&button_addr));
-        
-        // Connect to the Flic daemon
-        println!("FlicButton::new: Connecting to Flic daemon at 127.0.0.1:5551");
-        let mut stream = TcpStream::connect("127.0.0.1:5551").await?;
-        
-        // Set TCP_NODELAY to ensure packets are sent immediately
-        // This helps prevent buffering that can lead to connection issues
-        if let Err(e) = stream.set_nodelay(true) {
-            println!("FlicButton::new: Warning - Failed to set TCP_NODELAY: {}", e);
-        }
-        
-        println!("FlicButton::new: Connected to Flic daemon");
-        
-        // Use a simple connection ID
-        let conn_id = 1;
-        
-        let mut button = Self { 
-            stream,
-            conn_id,
-            button_addr,
-            connected: false,
-        };
-        
-        // Test the connection with a simple command
-        println!("FlicButton::new: Testing connection with GetInfo command");
-        match button.test_connection().await {
-            Ok(_) => {
-                println!("FlicButton::new: GetInfo command successful");
-                
-                // Now try to create a connection channel
-                println!("FlicButton::new: Creating connection channel");
-                match button.create_connection_channel().await {
-                    Ok(_) => println!("FlicButton::new: Connection channel created successfully"),
-                    Err(e) => println!("FlicButton::new: Failed to create connection channel: {}", e),
-                }
-            },
-            Err(e) => println!("FlicButton::new: GetInfo command failed: {}", e),
-        }
-        
-        Ok(button)
-    }
     
     // Parse a Bluetooth address string into bytes
     fn parse_bd_addr(addr_str: &str) -> Result<BdAddr, io::Error> {
@@ -190,6 +190,53 @@ impl FlicButton {
         println!("Parsed BD address as bytes: {}", format_bytes(&addr));
         
         Ok(addr)
+    }
+    
+    // Test the connection with a simple GetInfo command
+    async fn test_connection(&mut self) -> Result<(), io::Error> {
+        println!("test_connection: Sending GetInfo command");
+        
+        // Use the protocol structure to create the GetInfo command
+        let cmd = CmdGetInfo::new();
+        let cmd_bytes = cmd.to_bytes();
+        println!("test_connection: Command bytes: {}", format_bytes(&cmd_bytes));
+        
+        // Send the command with length prefix
+        let packet = add_length_prefix(&cmd_bytes);
+        println!("test_connection: Full packet with length prefix: {}", format_bytes(&packet));
+        
+        self.stream.write_all(&packet).await?;
+        self.stream.flush().await?;
+        println!("test_connection: Command sent, starting read loop");
+        
+        // Try to read anything that comes back (with a timeout)
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        
+        // Read whatever comes back for diagnostic purposes
+        let mut read_buf = [0u8; 1024];
+        match tokio::time::timeout(Duration::from_secs(2), self.stream.read(&mut read_buf)).await {
+            Ok(Ok(n)) if n > 0 => {
+                println!("test_connection: Read {} bytes: {}", n, format_bytes(&read_buf[0..n]));
+                // Don't set self.connected here - it should only be set when a connection channel is established
+                Ok(())
+            },
+            Ok(Ok(_)) => {
+                println!("test_connection: Read 0 bytes (connection closed by peer)");
+                // Don't set self.connected here
+                Err(io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed by peer"))
+            },
+            Ok(Err(e)) => {
+                println!("test_connection: Error reading response: {}", e);
+                // Don't set self.connected here
+                Err(e)
+            },
+            Err(_) => {
+                println!("test_connection: Timeout reading response");
+                // Even if we time out, we'll consider the daemon alive if we could send data
+                // Don't set self.connected here - it should only be set when a connection channel is established
+                Ok(())
+            }
+        }
     }
     
     // Create a connection channel to the button
@@ -244,6 +291,24 @@ impl FlicButton {
                 Err(e)
             }
         }
+    }
+    
+    // Remove the connection channel
+    async fn remove_connection_channel(&mut self) -> Result<(), io::Error> {
+        println!("remove_connection_channel: Removing connection channel {}", self.conn_id);
+        
+        // Use the protocol structure to create the command
+        let cmd = CmdRemoveConnectionChannel::new(self.conn_id);
+        let cmd_bytes = cmd.to_bytes();
+        
+        println!("remove_connection_channel: Command bytes: {}", format_bytes(&cmd_bytes));
+        
+        // No response is expected for remove_connection_channel
+        self.send_command(&cmd_bytes, None).await?;
+        
+        println!("remove_connection_channel: Connection channel removed");
+        self.connected = false;
+        Ok(())
     }
     
     // Helper to parse a Flic event packet
@@ -334,71 +399,6 @@ impl FlicButton {
                 None
             },
         }
-    }
-    
-    // Test the connection with a simple GetInfo command
-    async fn test_connection(&mut self) -> Result<(), io::Error> {
-        println!("test_connection: Sending GetInfo command");
-        
-        // Use the protocol structure to create the GetInfo command
-        let cmd = CmdGetInfo::new();
-        let cmd_bytes = cmd.to_bytes();
-        println!("test_connection: Command bytes: {}", format_bytes(&cmd_bytes));
-        
-        // Send the command with length prefix
-        let packet = add_length_prefix(&cmd_bytes);
-        println!("test_connection: Full packet with length prefix: {}", format_bytes(&packet));
-        
-        self.stream.write_all(&packet).await?;
-        self.stream.flush().await?;
-        println!("test_connection: Command sent, starting read loop");
-        
-        // Try to read anything that comes back (with a timeout)
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        
-        // Read whatever comes back for diagnostic purposes
-        let mut read_buf = [0u8; 1024];
-        match tokio::time::timeout(Duration::from_secs(2), self.stream.read(&mut read_buf)).await {
-            Ok(Ok(n)) if n > 0 => {
-                println!("test_connection: Read {} bytes: {}", n, format_bytes(&read_buf[0..n]));
-                // Don't set self.connected here - it should only be set when a connection channel is established
-                Ok(())
-            },
-            Ok(Ok(_)) => {
-                println!("test_connection: Read 0 bytes (connection closed by peer)");
-                // Don't set self.connected here
-                Err(io::Error::new(io::ErrorKind::ConnectionAborted, "Connection closed by peer"))
-            },
-            Ok(Err(e)) => {
-                println!("test_connection: Error reading response: {}", e);
-                // Don't set self.connected here
-                Err(e)
-            },
-            Err(_) => {
-                println!("test_connection: Timeout reading response");
-                // Even if we time out, we'll consider the daemon alive if we could send data
-                // Don't set self.connected here - it should only be set when a connection channel is established
-                Ok(())
-            }
-        }
-    }
-    
-    // Remove the connection channel
-    async fn remove_connection_channel(&mut self) -> Result<(), io::Error> {
-        println!("remove_connection_channel: Removing connection channel {}", self.conn_id);
-        
-        // Use the protocol structure to create the command
-        let cmd = CmdRemoveConnectionChannel::new(self.conn_id);
-        let cmd_bytes = cmd.to_bytes();
-        
-        println!("remove_connection_channel: Command bytes: {}", format_bytes(&cmd_bytes));
-        
-        // No response is expected for remove_connection_channel
-        self.send_command(&cmd_bytes, None).await?;
-        
-        println!("remove_connection_channel: Connection channel removed");
-        self.connected = false;
-        Ok(())
     }
 }
 
