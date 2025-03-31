@@ -8,7 +8,7 @@ use libc;
 
 // Constants from the Flic protocol
 const CMD_GET_INFO: u8 = 0x00;
-const EVT_GET_INFO_RESPONSE: u8 = 0x16;
+const EVT_GET_INFO_RESPONSE: u8 = 0x09;
 
 // Helper function to print bytes
 fn format_bytes(bytes: &[u8]) -> String {
