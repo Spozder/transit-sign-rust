@@ -6,6 +6,7 @@ use crate::display::StateEvent;
 use crate::error::{TransitError, TransitResult};
 
 pub mod flic;
+pub mod flic_protocol;
 
 use serde::Deserialize;
 
