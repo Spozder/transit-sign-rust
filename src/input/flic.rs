@@ -256,10 +256,11 @@ impl FlicButton {
         match self.send_command(&cmd, Some(EVT_CREATE_CONNECTION_CHANNEL_RESPONSE)).await {
             Ok(response) => {
                 // According to protocol docs, EVT_CREATE_CONNECTION_CHANNEL_RESPONSE structure is:
-                // opcode(1), connId(4), errorCode(1), reserved(2)
-                // error code is at index 5 after opcode(0) + connId(1-4)
+                // opcode(1), connId(4), errorCode(1), connectionStatus(1)
                 let result = if response.len() >= 6 { response[5] } else { 1 };
-                println!("create_connection_channel: Got connection channel response with result code: {}", result);
+                let conn_status = if response.len() >= 7 { response[6] } else { DISCONNECTED };
+                println!("create_connection_channel: Got connection channel response with result code: {}, connection status: {}", 
+                         result, conn_status);
                 
                 // Check error codes from protocol documentation
                 // 0 = SUCCESS, 1 = ERROR_ALREADY_EXISTS, etc.
@@ -271,9 +272,11 @@ impl FlicButton {
                     ));
                 }
                 
-                // Connection channel created successfully - set connected immediately
-                println!("create_connection_channel: Connection channel created successfully");
-                self.connected = true;
+                // Connection channel created successfully
+                // Note: We do NOT set self.connected = true here because the connection
+                // starts in Disconnected state. The listen method will handle the 
+                // connection status change events and set connected = true when ready.
+                println!("create_connection_channel: Connection channel created successfully (initial status: {})", conn_status);
                 Ok(())
             },
             Err(e) => {
