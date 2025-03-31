@@ -434,13 +434,7 @@ impl FlicButton {
 
 #[async_trait]
 impl InputHandler for FlicButton {
-    async fn listen(&mut self) -> TransitResult<InputEvent> {
-        // Ensure we have a connection channel
-        if !self.connected {
-            println!("listen: Not connected, creating connection channel");
-            self.create_connection_channel().await.map_err(|e| TransitError::Io(e))?;
-        }
-        
+    async fn listen(&mut self) -> TransitResult<InputEvent> {        
         println!("listen: Starting to listen for button events");
         
         loop {
