@@ -71,7 +71,14 @@ impl FlicButton {
         
         // Connect to the Flic daemon
         println!("FlicButton::new: Connecting to Flic daemon at 127.0.0.1:5551");
-        let stream = TcpStream::connect("127.0.0.1:5551").await?;
+        let mut stream = TcpStream::connect("127.0.0.1:5551").await?;
+        
+        // Set TCP_NODELAY to ensure packets are sent immediately
+        // This helps prevent buffering that can lead to connection issues
+        if let Err(e) = stream.set_nodelay(true) {
+            println!("FlicButton::new: Warning - Failed to set TCP_NODELAY: {}", e);
+        }
+        
         println!("FlicButton::new: Connected to Flic daemon");
         
         // Use a simple connection ID
@@ -153,10 +160,14 @@ impl FlicButton {
         packet.extend_from_slice(&cmd_len.to_le_bytes());
         packet.extend_from_slice(&cmd);
         
+        // Important: Make sure packet buffer is flushed completely
+        // sometimes tokio buffering can cause issues
+        
         println!("create_connection_channel: Sending command packet with length prefix: {}", format_bytes(&packet));
         
-        // Send the command
+        // Send the command and flush the stream to ensure it's sent immediately
         self.stream.write_all(&packet).await?;
+        self.stream.flush().await?;
         println!("create_connection_channel: Command sent, waiting for response");
         
         // Set a read timeout for the stream
@@ -407,9 +418,14 @@ impl FlicButton {
         
         println!("test_connection: Sending packet: {}", format_bytes(&packet));
         
-        // Send the command
+        // Send the command and flush the stream to ensure it's sent immediately
         self.stream.write_all(&packet).await?;
+        self.stream.flush().await?;
         println!("test_connection: Command sent, waiting for response");
+        
+        // Wait a moment for the daemon to process the command
+        // This helps avoid race conditions in the protocol
+        tokio::time::sleep(Duration::from_millis(100)).await;
         
         // First, read just the length prefix (2 bytes)
         let mut len_bytes = [0u8; 2];
@@ -497,10 +513,14 @@ impl FlicButton {
         packet.extend_from_slice(&cmd_len.to_le_bytes());
         packet.extend_from_slice(&cmd);
         
+        // Important: Make sure packet buffer is flushed completely
+        // sometimes tokio buffering can cause issues
+        
         println!("remove_connection_channel: Sending command: {}", format_bytes(&packet));
         
-        // Send the command
+        // Send the command and flush the stream to ensure it's sent immediately
         self.stream.write_all(&packet).await?;
+        self.stream.flush().await?;
         
         println!("remove_connection_channel: Connection channel removed");
         Ok(())
