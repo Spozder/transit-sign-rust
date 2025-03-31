@@ -11,10 +11,12 @@ use crate::error::{TransitError, TransitResult};
 
 // Constants for Flic protocol
 // Command opcodes
+const CMD_GET_INFO: u8 = 0;
 const CMD_CREATE_CONNECTION_CHANNEL: u8 = 3;
 const CMD_REMOVE_CONNECTION_CHANNEL: u8 = 4;
 
 // Event opcodes
+const EVT_GET_INFO_RESPONSE: u8 = 9;
 const EVT_CREATE_CONNECTION_CHANNEL_RESPONSE: u8 = 2;
 const EVT_CONNECTION_STATUS_CHANGED: u8 = 3;
 const EVT_BUTTON_UP_OR_DOWN: u8 = 4;
@@ -77,12 +79,21 @@ impl FlicButton {
         // Use a simple connection ID
         let conn_id = 1;
         
-        Ok(Self { 
+        let mut button = Self { 
             stream,
             conn_id,
             button_addr,
             connected: false,
-        })
+        };
+        
+        // Test the connection with a simple command
+        println!("FlicButton::new: Testing connection with GetInfo command");
+        match button.test_connection().await {
+            Ok(_) => println!("FlicButton::new: GetInfo command successful"),
+            Err(e) => println!("FlicButton::new: GetInfo command failed: {}", e),
+        }
+        
+        Ok(button)
     }
     
     // Parse a Bluetooth address string into bytes
@@ -366,6 +377,70 @@ impl FlicButton {
                 println!("parse_event: Unknown opcode: {}", opcode);
                 None
             },
+        }
+    }
+    
+    // Test the connection with a simple GetInfo command
+    async fn test_connection(&mut self) -> Result<(), io::Error> {
+        println!("test_connection: Sending GetInfo command");
+        
+        // Prepare the command packet - GetInfo is just a single byte
+        let cmd = [CMD_GET_INFO];
+        
+        // Send the command
+        self.stream.write_all(&cmd).await?;
+        println!("test_connection: Command sent, waiting for response");
+        
+        // Wait for response with timeout
+        let mut response = [0u8; 64];
+        let read_future = self.stream.read(&mut response);
+        
+        // Create a timeout future
+        let timeout_future = tokio::time::sleep(Duration::from_secs(5));
+        
+        // Race the read and timeout futures
+        let bytes_read = tokio::select! {
+            result = read_future => {
+                match result {
+                    Ok(bytes) => {
+                        println!("test_connection: Read completed with {} bytes", bytes);
+                        bytes
+                    },
+                    Err(e) => {
+                        println!("test_connection: Read error: {}", e);
+                        return Err(e);
+                    }
+                }
+            },
+            _ = timeout_future => {
+                println!("test_connection: Timeout waiting for response from Flic daemon");
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Timeout waiting for response from Flic daemon"
+                ));
+            }
+        };
+        
+        println!("test_connection: Received {} bytes: {}", 
+                 bytes_read, 
+                 format_bytes(&response[..bytes_read]));
+        
+        if bytes_read == 0 {
+            println!("test_connection: Empty response");
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "Empty response from Flic daemon"
+            ));
+        }
+        
+        // Check if it's a GetInfo response
+        if response[0] == EVT_GET_INFO_RESPONSE {
+            println!("test_connection: Got GetInfo response");
+            Ok(())
+        } else {
+            println!("test_connection: Unexpected response opcode: {}", response[0]);
+            // We'll still return Ok here since we got some response
+            Ok(())
         }
     }
     
