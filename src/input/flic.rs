@@ -62,17 +62,26 @@ pub struct FlicButton {
 }
 
 impl FlicButton {
-    // Generic method to send a command and read the response
+    // Generic method to send a command and read the response, matching C++ implementation
     async fn send_command(&mut self, cmd: &[u8], expected_resp_opcode: Option<u8>) -> Result<Vec<u8>, io::Error> {
-        // Add length prefix (2 bytes, little endian)
+        // Create a buffer with 2 bytes for length + the command bytes
+        // This matches the C++ implementation's approach
         let cmd_len = cmd.len() as u16;
-        let mut packet = Vec::with_capacity(2 + cmd_len as usize);
-        packet.extend_from_slice(&cmd_len.to_le_bytes()); // Little-endian length prefix
+        let mut packet = Vec::with_capacity(2 + cmd.len());
+        
+        // Set length prefix bytes individually to match C++ implementation exactly
+        // new_buf[0] = len & 0xff;
+        // new_buf[1] = len >> 8;
+        packet.push((cmd_len & 0xff) as u8);
+        packet.push((cmd_len >> 8) as u8);
+        
+        // Copy command bytes to the packet
         packet.extend_from_slice(cmd);
         
         println!("send_command: Sending packet: {}", format_bytes(&packet));
         
         // Send the command and flush the stream to ensure it's sent immediately
+        // write_all ensures all bytes are written, similar to the C++ loop
         self.stream.write_all(&packet).await?;
         self.stream.flush().await?;
         println!("send_command: Command sent, waiting for response");
