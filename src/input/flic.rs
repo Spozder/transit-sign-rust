@@ -139,9 +139,38 @@ impl FlicButton {
         self.stream.write_all(&cmd).await?;
         println!("create_connection_channel: Command sent, waiting for response");
         
-        // Wait for response
+        // Set a read timeout for the stream
+        println!("create_connection_channel: Setting read timeout to 5 seconds");
+        
+        // Wait for response with timeout
         let mut response = [0u8; 64];
-        let bytes_read = self.stream.read(&mut response).await?;
+        let read_future = self.stream.read(&mut response);
+        
+        // Create a timeout future
+        let timeout_future = tokio::time::sleep(Duration::from_secs(5));
+        
+        // Race the read and timeout futures
+        let bytes_read = tokio::select! {
+            result = read_future => {
+                match result {
+                    Ok(bytes) => {
+                        println!("create_connection_channel: Read completed with {} bytes", bytes);
+                        bytes
+                    },
+                    Err(e) => {
+                        println!("create_connection_channel: Read error: {}", e);
+                        return Err(e);
+                    }
+                }
+            },
+            _ = timeout_future => {
+                println!("create_connection_channel: Timeout waiting for response from Flic daemon");
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Timeout waiting for response from Flic daemon"
+                ));
+            }
+        };
         
         println!("create_connection_channel: Received {} bytes: {}", 
                  bytes_read, 
