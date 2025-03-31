@@ -324,7 +324,7 @@ impl FlicButton {
         println!("parse_event: Parsing event with opcode: 0x{:02x} ({})", opcode, opcode);
         
         match opcode {
-            EVT_BUTTON_UP_OR_DOWN_OPCODE => {
+            EVT_BUTTON_SINGLE_OR_DOUBLE_CLICK_OR_HOLD_OPCODE => {
                 // Use our protocol structure to parse the button event
                 if let Some(evt) = EvtButtonEvent::from_bytes(buf) {
                     // Verify it's for our connection
@@ -336,13 +336,17 @@ impl FlicButton {
                     println!("parse_event: Button event, click_type: {:?}, was_queued: {}", evt.click_type, evt.was_queued);
                     
                     match evt.click_type {
-                        ClickType::ButtonDown => {
-                            println!("parse_event: BUTTON_DOWN detected");
-                            None
+                        ClickType::ButtonClick => {
+                            println!("parse_event: BUTTON_CLICK detected");
+                            Some(InputEvent::SinglePress)
                         },
-                        ClickType::ButtonUp => {
-                            println!("parse_event: BUTTON_UP detected - ignoring");
-                            None
+                        ClickType::ButtonDoubleClick => {
+                            println!("parse_event: BUTTON_DOUBLE_CLICK detected");
+                            Some(InputEvent::DoublePress)
+                        },
+                        ClickType::ButtonHold => {
+                            println!("parse_event: BUTTON_HOLD detected");
+                            Some(InputEvent::LongPress)
                         },
                         _ => {
                             println!("parse_event: Unexpected click type: {:?}", evt.click_type);
