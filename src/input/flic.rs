@@ -62,6 +62,87 @@ pub struct FlicButton {
 }
 
 impl FlicButton {
+    // Generic method to send a command and read the response
+    async fn send_command(&mut self, cmd: &[u8], expected_resp_opcode: Option<u8>) -> Result<Vec<u8>, io::Error> {
+        // Add length prefix (2 bytes, little endian)
+        let cmd_len = cmd.len() as u16;
+        let mut packet = Vec::with_capacity(2 + cmd_len as usize);
+        packet.extend_from_slice(&cmd_len.to_le_bytes()); // Little-endian length prefix
+        packet.extend_from_slice(cmd);
+        
+        println!("send_command: Sending packet: {}", format_bytes(&packet));
+        
+        // Send the command and flush the stream to ensure it's sent immediately
+        self.stream.write_all(&packet).await?;
+        self.stream.flush().await?;
+        println!("send_command: Command sent, waiting for response");
+        
+        // Give the daemon a moment to process our command
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        
+        // Read the response if one is expected
+        if let Some(expected_opcode) = expected_resp_opcode {
+            // First, read the length prefix (2 bytes)
+            let mut len_bytes = [0u8; 2];
+            match tokio::time::timeout(Duration::from_secs(5), self.stream.read_exact(&mut len_bytes)).await {
+                Ok(Ok(_)) => {
+                    // Successfully read the length prefix
+                    let length = u16::from_le_bytes(len_bytes);
+                    println!("send_command: Read response length prefix: {} bytes", length);
+                    
+                    // Now read the actual payload
+                    let mut response = vec![0u8; length as usize];
+                    match tokio::time::timeout(Duration::from_secs(5), self.stream.read_exact(&mut response)).await {
+                        Ok(Ok(_)) => {
+                            println!("send_command: Read response payload: {}", format_bytes(&response));
+                            
+                            // Check if it's the expected response type
+                            if !response.is_empty() && response[0] == expected_opcode {
+                                println!("send_command: Received expected response type 0x{:02x}", expected_opcode);
+                                Ok(response)
+                            } else {
+                                println!("send_command: Unexpected response opcode: 0x{:02x}, expected: 0x{:02x}", 
+                                         if !response.is_empty() { response[0] } else { 0 }, 
+                                         expected_opcode);
+                                Err(io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    format!("Unexpected response opcode: 0x{:02x}, expected: 0x{:02x}", 
+                                            if !response.is_empty() { response[0] } else { 0 }, 
+                                            expected_opcode)
+                                ))
+                            }
+                        },
+                        Ok(Err(e)) => {
+                            println!("send_command: Error reading response payload: {}", e);
+                            Err(e)
+                        },
+                        Err(_) => {
+                            println!("send_command: Timeout reading response payload");
+                            Err(io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                "Timeout reading response payload from Flic daemon"
+                            ))
+                        }
+                    }
+                },
+                Ok(Err(e)) => {
+                    println!("send_command: Error reading response length prefix: {}", e);
+                    Err(e)
+                },
+                Err(_) => {
+                    println!("send_command: Timeout reading response length prefix");
+                    Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "Timeout reading response length prefix from Flic daemon"
+                    ))
+                }
+            }
+        } else {
+            // No response expected, just return empty vector
+            Ok(Vec::new())
+        }
+    }
+
     pub async fn new(button_addr_str: &str) -> Result<Self, io::Error> {
         println!("FlicButton::new: Creating new FlicButton with address {}", button_addr_str);
         
@@ -153,101 +234,36 @@ impl FlicButton {
         // Auto disconnect time (2 bytes, little endian) - 511 means never disconnect
         cmd.extend_from_slice(&(511u16).to_le_bytes());
         
-        // Add length prefix (2 bytes, little endian)
-        let cmd_len = cmd.len() as u16;
-        let mut packet = Vec::with_capacity(2 + cmd_len as usize);
-        // Length prefix in little-endian format
-        packet.extend_from_slice(&cmd_len.to_le_bytes());
-        packet.extend_from_slice(&cmd);
-        
-        // Important: Make sure packet buffer is flushed completely
-        // sometimes tokio buffering can cause issues
-        
-        println!("create_connection_channel: Sending command packet with length prefix: {}", format_bytes(&packet));
-        
-        // Send the command and flush the stream to ensure it's sent immediately
-        self.stream.write_all(&packet).await?;
-        self.stream.flush().await?;
-        println!("create_connection_channel: Command sent, waiting for response");
-        
-        // Set a read timeout for the stream
-        println!("create_connection_channel: Setting read timeout to 5 seconds");
-        
-        // Give the daemon a moment to process our command
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        
-        // First, read the length prefix (2 bytes)
-        let mut len_bytes = [0u8; 2];
-        match tokio::time::timeout(Duration::from_secs(5), self.stream.read_exact(&mut len_bytes)).await {
-            Ok(Ok(_)) => {
-                // Successfully read the length prefix
-                let length = u16::from_le_bytes(len_bytes);
-                println!("create_connection_channel: Read length prefix: {} bytes", length);
+        // Send the command and expect a response
+        match self.send_command(&cmd, Some(EVT_CREATE_CONNECTION_CHANNEL_RESPONSE)).await {
+            Ok(response) => {
+                // According to protocol docs, EVT_CREATE_CONNECTION_CHANNEL_RESPONSE structure is:
+                // opcode(1), connId(4), errorCode(1), reserved(2)
+                // error code is at index 5 after opcode(0) + connId(1-4)
+                let result = if response.len() >= 6 { response[5] } else { 1 };
+                println!("create_connection_channel: Got connection channel response with result code: {}", result);
                 
-                // Now read the actual payload
-                let mut response = vec![0u8; length as usize];
-                match tokio::time::timeout(Duration::from_secs(5), self.stream.read_exact(&mut response)).await {
-                    Ok(Ok(_)) => {
-                        println!("create_connection_channel: Successfully read payload: {}", format_bytes(&response));
-                        
-                        // Check if it's a connection channel response
-                        if !response.is_empty() && response[0] == EVT_CREATE_CONNECTION_CHANNEL_RESPONSE {
-                            // According to protocol docs, EVT_CREATE_CONNECTION_CHANNEL_RESPONSE structure is:
-                            // opcode(1), connId(4), errorCode(1), reserved(2)
-                            // error code is at index 5 after opcode(0) + connId(1-4)
-                            let result = if response.len() >= 6 { response[5] } else { 1 };
-                            println!("create_connection_channel: Got connection channel response with result code: {}", result);
-                            
-                            // Check error codes from protocol documentation
-                            // 0 = SUCCESS, 1 = ERROR_ALREADY_EXISTS, etc.
-                            if result != 0 {
-                                println!("create_connection_channel: Failed with error code: {}", result);
-                                return Err(io::Error::new(
-                                    io::ErrorKind::Other,
-                                    format!("Failed to create connection channel, error code: {}", result)
-                                ));
-                            }
-                            
-                            // Now wait for connection status to change to READY
-                            println!("create_connection_channel: Waiting for READY status");
-                            self.wait_for_ready_status().await?;
-                            
-                            println!("create_connection_channel: Connection channel created successfully");
-                            self.connected = true;
-                            Ok(())
-                        } else {
-                            println!("create_connection_channel: Unexpected response opcode: {}", 
-                                     if !response.is_empty() { response[0] } else { 0 });
-                            Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                format!("Unexpected response opcode: {}", 
-                                        if !response.is_empty() { response[0] } else { 0 })
-                            ))
-                        }
-                    },
-                    Ok(Err(e)) => {
-                        println!("create_connection_channel: Error reading payload: {}", e);
-                        Err(e)
-                    },
-                    Err(_) => {
-                        println!("create_connection_channel: Timeout reading payload");
-                        Err(io::Error::new(
-                            io::ErrorKind::TimedOut,
-                            "Timeout reading payload from Flic daemon"
-                        ))
-                    }
+                // Check error codes from protocol documentation
+                // 0 = SUCCESS, 1 = ERROR_ALREADY_EXISTS, etc.
+                if result != 0 {
+                    println!("create_connection_channel: Failed with error code: {}", result);
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Failed to create connection channel, error code: {}", result)
+                    ));
                 }
+                
+                // Now wait for connection status to change to READY
+                println!("create_connection_channel: Waiting for READY status");
+                self.wait_for_ready_status().await?;
+                
+                println!("create_connection_channel: Connection channel created successfully");
+                self.connected = true;
+                Ok(())
             },
-            Ok(Err(e)) => {
-                println!("create_connection_channel: Error reading length prefix: {}", e);
+            Err(e) => {
+                println!("create_connection_channel: Failed to create connection channel: {}", e);
                 Err(e)
-            },
-            Err(_) => {
-                println!("create_connection_channel: Timeout waiting for length prefix");
-                return Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "Timeout waiting for response from Flic daemon"
-                ));
             }
         }
     }
@@ -384,28 +400,24 @@ impl FlicButton {
     async fn test_connection(&mut self) -> Result<(), io::Error> {
         println!("test_connection: Sending GetInfo command");
         
-        // Prepare the command packet - GetInfo is just a single byte
+        // GetInfo is just a single byte command
         let cmd = [CMD_GET_INFO];
         
-        // Add length prefix (2 bytes, little endian)
-        let mut packet = Vec::with_capacity(3);
-        let cmd_len: u16 = 1; // CMD_GET_INFO is just 1 byte
-        packet.extend_from_slice(&cmd_len.to_le_bytes()); // Little-endian length prefix
-        packet.push(CMD_GET_INFO);
-        
-        println!("test_connection: Sending packet: {}", format_bytes(&packet));
-        
-        // Send the command and flush the stream to ensure it's sent immediately
-        self.stream.write_all(&packet).await?;
-        self.stream.flush().await?;
-        println!("test_connection: Command sent, waiting for response");
-        
-        // Since we're just testing if the daemon is alive, and the flicd daemon
-        // may not always respond to GetInfo immediately, we'll consider the connection
-        // successful if we were able to send data without errors
-        println!("test_connection: Command sent successfully, assuming daemon is alive");
-        self.connected = true;
-        Ok(())
+        // Use our generic command sender with expected response opcode
+        match self.send_command(&cmd, Some(EVT_GET_INFO_RESPONSE)).await {
+            Ok(response) => {
+                println!("test_connection: GetInfo command successful");
+                // We've successfully communicated with the daemon
+                self.connected = true;
+                Ok(())
+            },
+            Err(e) => {
+                println!("test_connection: GetInfo command failed: {}", e);
+                // Even if GetInfo fails, we'll consider the daemon alive if we could send data
+                self.connected = true;
+                Ok(())
+            }
+        }
     }
     
     // Remove the connection channel
@@ -419,23 +431,11 @@ impl FlicButton {
         // Connection ID (4 bytes, little endian)
         cmd.extend_from_slice(&self.conn_id.to_le_bytes());
         
-        // Add length prefix (2 bytes, little endian)
-        let cmd_len = cmd.len() as u16;
-        let mut packet = Vec::with_capacity(2 + cmd_len as usize);
-        // Length prefix in little-endian format
-        packet.extend_from_slice(&cmd_len.to_le_bytes());
-        packet.extend_from_slice(&cmd);
-        
-        // Important: Make sure packet buffer is flushed completely
-        // sometimes tokio buffering can cause issues
-        
-        println!("remove_connection_channel: Sending command: {}", format_bytes(&packet));
-        
-        // Send the command and flush the stream to ensure it's sent immediately
-        self.stream.write_all(&packet).await?;
-        self.stream.flush().await?;
+        // No response is expected for remove_connection_channel
+        self.send_command(&cmd, None).await?;
         
         println!("remove_connection_channel: Connection channel removed");
+        self.connected = false;
         Ok(())
     }
 }
