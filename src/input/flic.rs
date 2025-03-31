@@ -5,6 +5,7 @@ use std::error::Error;
 use async_trait::async_trait;
 use std::time::Duration;
 use std::fmt::Write as FmtWrite;
+use std::time::Instant;
 
 use super::{InputEvent, InputHandler};
 use crate::error::{TransitError, TransitResult};
@@ -233,59 +234,62 @@ impl FlicButton {
     
     // Wait for the connection status to change to READY
     async fn wait_for_ready_status(&mut self) -> Result<(), io::Error> {
-        println!("wait_for_ready_status: Waiting for button to be ready");
-        let mut buf = [0u8; 64];
-        let mut attempts = 0;
+        println!("wait_for_ready_status: Waiting for connection status to change to READY");
         
-        while attempts < 10 {
-            println!("wait_for_ready_status: Attempt {} of 10", attempts + 1);
-            let bytes_read = self.stream.read(&mut buf).await?;
+        // Set a timeout for waiting
+        let start_time = Instant::now();
+        let timeout = Duration::from_secs(10);
+        
+        while !self.connected && start_time.elapsed() < timeout {
+            println!("wait_for_ready_status: Reading packet");
             
-            println!("wait_for_ready_status: Received {} bytes: {}", 
-                     bytes_read, 
-                     format_bytes(&buf[..bytes_read]));
+            // Read the length prefix (2 bytes)
+            let mut len_buf = [0u8; 2];
+            self.stream.read_exact(&mut len_buf).await?;
             
-            if bytes_read < 3 {
-                println!("wait_for_ready_status: Incomplete data, waiting...");
-                attempts += 1;
-                tokio::time::sleep(Duration::from_millis(100)).await;
+            // Convert the length bytes to a u16 (little endian)
+            let packet_len = u16::from_le_bytes(len_buf) as usize;
+            println!("wait_for_ready_status: Received packet with length: {}", packet_len);
+            
+            if packet_len == 0 || packet_len > 1024 {
+                println!("wait_for_ready_status: Invalid packet length: {}", packet_len);
                 continue;
             }
             
-            if buf[0] == EVT_CONNECTION_STATUS_CHANGED {
-                // Check if the connection ID matches
-                let conn_id_bytes = [buf[1], buf[2], buf[3], buf[4]];
-                let conn_id = u32::from_le_bytes(conn_id_bytes);
-                
-                println!("wait_for_ready_status: Connection status changed for conn_id: {}", conn_id);
-                
-                if conn_id == self.conn_id {
-                    let status = buf[5];
-                    println!("wait_for_ready_status: Status is now: {}", status);
+            // Read the packet body
+            let mut packet = vec![0u8; packet_len];
+            self.stream.read_exact(&mut packet).await?;
+            
+            println!("wait_for_ready_status: Received packet: {}", format_bytes(&packet));
+            
+            // Check if it's a connection status changed event
+            if packet.len() > 0 && packet[0] == EVT_CONNECTION_STATUS_CHANGED {
+                if packet.len() >= 6 {
+                    let status = packet[5];
+                    println!("wait_for_ready_status: Connection status changed to: {}", status);
                     
                     if status == READY {
-                        println!("wait_for_ready_status: Button is READY");
+                        println!("wait_for_ready_status: Connection is now READY");
                         self.connected = true;
                         return Ok(());
-                    } else if status == DISCONNECTED {
-                        println!("wait_for_ready_status: Button DISCONNECTED");
-                        return Err(io::Error::new(
-                            io::ErrorKind::ConnectionAborted,
-                            "Button disconnected before ready"
-                        ));
                     }
                 }
             }
             
-            attempts += 1;
+            // Short delay before next read
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         
-        println!("wait_for_ready_status: Timed out waiting for button");
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "Timed out waiting for button to be ready"
-        ))
+        if self.connected {
+            println!("wait_for_ready_status: Connection is already READY");
+            Ok(())
+        } else {
+            println!("wait_for_ready_status: Timeout waiting for READY status");
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Timeout waiting for connection to become READY"
+            ))
+        }
     }
     
     // Helper to parse a Flic event packet
