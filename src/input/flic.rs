@@ -169,16 +169,32 @@ impl FlicButton {
         // Create a timeout future
         let timeout_future = tokio::time::sleep(Duration::from_secs(5));
         
-        // Race the read and timeout futures
-        let bytes_read = tokio::select! {
+        // Read the length prefix with timeout
+        let len_bytes = [0u8; 2];
+        
+        let read_result = tokio::select! {
             result = read_future => {
                 match result {
-                    Ok(bytes) => {
-                        println!("create_connection_channel: Read completed with {} bytes", bytes);
-                        bytes
+                    Ok(_) => {
+                        // Successfully read 2 bytes for length prefix
+                        let length = u16::from_le_bytes(len_bytes) as usize;
+                        println!("create_connection_channel: Read length prefix: {} bytes", length);
+                        
+                        // Now read the actual payload based on the length
+                        let mut payload = vec![0u8; length];
+                        match self.stream.read_exact(&mut payload).await {
+                            Ok(_) => {
+                                println!("create_connection_channel: Successfully read payload: {}", format_bytes(&payload));
+                                Some(payload)
+                            },
+                            Err(e) => {
+                                println!("create_connection_channel: Error reading payload: {}", e);
+                                return Err(e);
+                            }
+                        }
                     },
                     Err(e) => {
-                        println!("create_connection_channel: Read error: {}", e);
+                        println!("create_connection_channel: Error reading length prefix: {}", e);
                         return Err(e);
                     }
                 }
@@ -192,12 +208,21 @@ impl FlicButton {
             }
         };
         
-        println!("create_connection_channel: Received {} bytes: {}", 
-                 bytes_read, 
-                 format_bytes(&response[..bytes_read]));
+        // If we didn't get a payload, return an error
+        let response = match read_result {
+            Some(payload) => payload,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "Failed to read response payload from Flic daemon"
+                ));
+            }
+        };
         
-        if bytes_read < 3 {
-            println!("create_connection_channel: Incomplete response (only {} bytes)", bytes_read);
+        println!("create_connection_channel: Received payload: {}", format_bytes(&response));
+        
+        if response.len() < 3 {
+            println!("create_connection_channel: Incomplete response (only {} bytes)", response.len());
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "Incomplete response from Flic daemon"
@@ -207,12 +232,11 @@ impl FlicButton {
         // Check if it's a connection channel response
         // First two bytes of response are the length prefix
         // Skip those and check if the opcode matches what we expect
-        if bytes_read >= 3 && response[0] == EVT_CREATE_CONNECTION_CHANNEL_RESPONSE {
+        if response.len() >= 3 && response[0] == EVT_CREATE_CONNECTION_CHANNEL_RESPONSE {
             // According to protocol docs, EVT_CREATE_CONNECTION_CHANNEL_RESPONSE structure is:
             // opcode(1), connId(4), errorCode(1), reserved(2)
-            // The response bytes in our read don't include the length prefix, so:
             // error code is at index 5 after opcode(0) + connId(1-4)
-            let result = if bytes_read >= 6 { response[5] } else { 1 };
+            let result = if response.len() >= 6 { response[5] } else { 1 };
             println!("create_connection_channel: Got connection channel response with result code: {}", result);
             
             // Check error codes from protocol documentation
@@ -258,6 +282,7 @@ impl FlicButton {
             // Convert the length bytes to a u16 (little endian)
             let packet_len = u16::from_le_bytes(len_buf) as usize;
             println!("wait_for_ready_status: Received packet with length: {}", packet_len);
+            println!("wait_for_ready_status: Length bytes: {}", format_bytes(&len_buf));
             
             if packet_len == 0 || packet_len > 1024 {
                 println!("wait_for_ready_status: Invalid packet length: {}", packet_len);
@@ -272,7 +297,18 @@ impl FlicButton {
             
             // Check if it's a connection status changed event
             if packet.len() > 0 && packet[0] == EVT_CONNECTION_STATUS_CHANGED {
-                if packet.len() >= 6 {
+                // Extract the connection ID
+                let conn_id = if packet.len() >= 5 {
+                    let mut id_bytes = [0u8; 4];
+                    id_bytes.copy_from_slice(&packet[1..5]);
+                    u32::from_le_bytes(id_bytes)
+                } else {
+                    0
+                };
+                
+                println!("wait_for_ready_status: Event for connection ID: {}", conn_id);
+                // Check if this event is for our connection
+                if conn_id == self.conn_id && packet.len() >= 6 {
                     let status = packet[5];
                     println!("wait_for_ready_status: Connection status changed to: {}", status);
                     
@@ -282,6 +318,9 @@ impl FlicButton {
                         return Ok(());
                     }
                 }
+            } else {
+                println!("wait_for_ready_status: Received non-connection-status event: opcode={}", 
+                          if !packet.is_empty() { packet[0] } else { 0xff });
             }
             
             // Short delay before next read
@@ -366,68 +405,77 @@ impl FlicButton {
         packet.extend_from_slice(&cmd_len.to_le_bytes()); // Little-endian length prefix
         packet.push(CMD_GET_INFO);
         
+        println!("test_connection: Sending packet: {}", format_bytes(&packet));
+        
         // Send the command
         self.stream.write_all(&packet).await?;
         println!("test_connection: Command sent, waiting for response");
         
-        // Wait for response with timeout
-        let mut response = [0u8; 64];
-        let read_future = self.stream.read(&mut response);
+        // First, read just the length prefix (2 bytes)
+        let mut len_bytes = [0u8; 2];
         
-        // Create a timeout future
-        let timeout_future = tokio::time::sleep(Duration::from_secs(5));
+        // Set a timeout for reading the length prefix
+        let timeout = Duration::from_secs(5);
+        let read_future = self.stream.read_exact(&mut len_bytes);
+        let read_result = tokio::time::timeout(timeout, read_future).await;
         
-        // Race the read and timeout futures
-        let bytes_read = tokio::select! {
-            result = read_future => {
-                match result {
-                    Ok(bytes) => {
-                        println!("test_connection: Read completed with {} bytes", bytes);
-                        bytes
+        match read_result {
+            Ok(Ok(_)) => {
+                // Successfully read 2 bytes for length prefix
+                let length = u16::from_le_bytes(len_bytes) as usize;
+                println!("test_connection: Read length prefix: {} bytes", length);
+                
+                // Now read the actual payload based on the length
+                let mut payload = vec![0u8; length];
+                let payload_read = tokio::time::timeout(
+                    timeout, 
+                    self.stream.read_exact(&mut payload)
+                ).await;
+                
+                match payload_read {
+                    Ok(Ok(_)) => {
+                        println!("test_connection: Successfully read payload: {}", format_bytes(&payload));
+                        
+                        // Check if it's a GetInfo response
+                        if !payload.is_empty() && payload[0] == EVT_GET_INFO_RESPONSE {
+                            println!("test_connection: Got GetInfo response (opcode 0x{:02x})", EVT_GET_INFO_RESPONSE);
+                            self.connected = true;
+                            Ok(())
+                        } else {
+                            println!("test_connection: Unexpected response opcode: 0x{:02x}, expected: 0x{:02x}", 
+                                     if !payload.is_empty() { payload[0] } else { 0 }, 
+                                     EVT_GET_INFO_RESPONSE);
+                            
+                            // We still got a response, so the daemon is working
+                            println!("test_connection: Marking as connected anyway since we got a response");
+                            self.connected = true;
+                            Ok(())
+                        }
                     },
-                    Err(e) => {
-                        println!("test_connection: Read error: {}", e);
-                        return Err(e);
+                    Ok(Err(e)) => {
+                        println!("test_connection: Error reading payload: {}", e);
+                        Err(e)
+                    },
+                    Err(_) => {
+                        println!("test_connection: Timeout reading payload");
+                        Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "Timeout reading payload from Flic daemon"
+                        ))
                     }
                 }
             },
-            _ = timeout_future => {
+            Ok(Err(e)) => {
+                println!("test_connection: Error reading length prefix: {}", e);
+                Err(e)
+            },
+            Err(_) => {
                 println!("test_connection: Timeout waiting for response from Flic daemon");
-                return Err(io::Error::new(
+                Err(io::Error::new(
                     io::ErrorKind::TimedOut,
                     "Timeout waiting for response from Flic daemon"
-                ));
+                ))
             }
-        };
-        
-        println!("test_connection: Received {} bytes: {}", 
-                 bytes_read, 
-                 format_bytes(&response[..bytes_read]));
-        
-        if bytes_read == 0 {
-            println!("test_connection: Empty response");
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "Empty response from Flic daemon"
-            ));
-        }
-        
-        // The first byte should be the opcode since we're reading directly from the stream
-        // which already skips the length prefix bytes
-        if bytes_read >= 1 && response[0] == EVT_GET_INFO_RESPONSE {
-            println!("test_connection: Got GetInfo response (opcode 0x{:02x})", EVT_GET_INFO_RESPONSE);
-            self.connected = true;
-            Ok(())
-        } else {
-            // If we got any response, at least we know the daemon is responding
-            // The protocol response structure includes a length prefix
-            println!("test_connection: Unexpected response opcode: 0x{:02x}, expected: 0x{:02x}", 
-                     if bytes_read >= 1 { response[0] } else { 0 }, 
-                     EVT_GET_INFO_RESPONSE);
-            println!("test_connection: Complete response: {}", format_bytes(&response[..bytes_read]));
-            // We'll still return Ok here since we got some response
-            self.connected = true;
-            Ok(())
         }
     }
     
