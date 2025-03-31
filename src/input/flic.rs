@@ -173,9 +173,10 @@ impl FlicButton {
         }
         
         let mut addr = [0u8; 6];
+        // Store in reverse order (little-endian)
         for (i, part) in parts.iter().enumerate() {
             match u8::from_str_radix(part, 16) {
-                Ok(val) => addr[i] = val,
+                Ok(val) => addr[5 - i] = val,  // Reverse the byte order
                 Err(e) => {
                     println!("parse_bd_addr: Invalid hex value in part {}: {}", i, part);
                     return Err(io::Error::new(
@@ -187,7 +188,7 @@ impl FlicButton {
         }
         
         // Print the parsed address in the way we'll use it
-        println!("Parsed BD address as bytes: {}", format_bytes(&addr));
+        println!("Parsed BD address as bytes (little-endian): {}", format_bytes(&addr));
         
         Ok(addr)
     }
