@@ -12,34 +12,31 @@ use crate::error::{TransitError, TransitResult};
 
 // Constants for Flic protocol
 // Command opcodes
-const CMD_GET_INFO: u8 = 0;
-const CMD_CREATE_CONNECTION_CHANNEL: u8 = 3;
-const CMD_REMOVE_CONNECTION_CHANNEL: u8 = 4;
+const CMD_GET_INFO: u8 = 0x01;
+const CMD_CREATE_CONNECTION_CHANNEL: u8 = 0x03;
+const CMD_REMOVE_CONNECTION_CHANNEL: u8 = 0x04;
 
 // Event opcodes
-const EVT_GET_INFO_RESPONSE: u8 = 9;
-const EVT_CREATE_CONNECTION_CHANNEL_RESPONSE: u8 = 2;
-const EVT_CONNECTION_STATUS_CHANGED: u8 = 3;
-const EVT_BUTTON_UP_OR_DOWN: u8 = 4;
-const EVT_BUTTON_CLICK_OR_HOLD: u8 = 5;
-const EVT_BUTTON_SINGLE_OR_DOUBLE_CLICK: u8 = 6;
-const EVT_BUTTON_SINGLE_OR_DOUBLE_CLICK_OR_HOLD: u8 = 7;
+const EVT_GET_INFO_RESPONSE: u8 = 0x16;  // 22 decimal - Corrected based on logs
+const EVT_CREATE_CONNECTION_CHANNEL_RESPONSE: u8 = 0x07;  // 7 decimal - Corrected based on logs
+const EVT_CONNECTION_STATUS_CHANGED: u8 = 0x0B;  // 11 decimal, based on protocol docs
+const EVT_BUTTON_EVENT: u8 = 0x0D;  // 13 decimal, based on protocol docs
 
 // Click types
-const BUTTON_DOWN: u8 = 0;
-const BUTTON_UP: u8 = 1;
-const BUTTON_CLICK: u8 = 0;
-const BUTTON_HOLD: u8 = 1;
-const BUTTON_SINGLE_CLICK: u8 = 0;
-const BUTTON_DOUBLE_CLICK: u8 = 1;
+const BUTTON_DOWN: u8 = 0x01;
+const BUTTON_UP: u8 = 0x00;
+const BUTTON_CLICK: u8 = 0x00;
+const BUTTON_HOLD: u8 = 0x01;
+const BUTTON_SINGLE_CLICK: u8 = 0x00;
+const BUTTON_DOUBLE_CLICK: u8 = 0x01;
 
 // Connection status
-const DISCONNECTED: u8 = 0;
-const CONNECTED: u8 = 1;
-const READY: u8 = 2;
+const DISCONNECTED: u8 = 0x00;
+const CONNECTED: u8 = 0x01;
+const READY: u8 = 0x02;
 
 // Latency mode
-const LATENCY_NORMAL: u8 = 0;
+const LATENCY_NORMAL: u8 = 0x00;
 
 // Bluetooth address type (6 bytes)
 type BdAddr = [u8; 6];
@@ -316,60 +313,14 @@ impl FlicButton {
         }
         
         match opcode {
-            EVT_BUTTON_UP_OR_DOWN => {
-                println!("parse_event: Button up/down event, click_type: {}", buf[5]);
+            EVT_BUTTON_EVENT => {
+                println!("parse_event: Button event, click_type: {}", buf[5]);
                 // We're only interested in button down events
                 if buf[5] == BUTTON_DOWN {
                     println!("parse_event: BUTTON_DOWN detected");
                     Some(InputEvent::SinglePress)
                 } else {
                     None
-                }
-            },
-            EVT_BUTTON_CLICK_OR_HOLD => {
-                println!("parse_event: Button click/hold event, click_type: {}", buf[5]);
-                match buf[5] {
-                    BUTTON_CLICK => {
-                        println!("parse_event: BUTTON_CLICK detected");
-                        Some(InputEvent::SinglePress)
-                    },
-                    BUTTON_HOLD => {
-                        println!("parse_event: BUTTON_HOLD detected");
-                        Some(InputEvent::LongPress)
-                    },
-                    _ => None,
-                }
-            },
-            EVT_BUTTON_SINGLE_OR_DOUBLE_CLICK => {
-                println!("parse_event: Button single/double click event, click_type: {}", buf[5]);
-                match buf[5] {
-                    BUTTON_SINGLE_CLICK => {
-                        println!("parse_event: BUTTON_SINGLE_CLICK detected");
-                        Some(InputEvent::SinglePress)
-                    },
-                    BUTTON_DOUBLE_CLICK => {
-                        println!("parse_event: BUTTON_DOUBLE_CLICK detected");
-                        Some(InputEvent::DoublePress)
-                    },
-                    _ => None,
-                }
-            },
-            EVT_BUTTON_SINGLE_OR_DOUBLE_CLICK_OR_HOLD => {
-                println!("parse_event: Button single/double/hold event, click_type: {}", buf[5]);
-                match buf[5] {
-                    BUTTON_SINGLE_CLICK => {
-                        println!("parse_event: BUTTON_SINGLE_CLICK detected");
-                        Some(InputEvent::SinglePress)
-                    },
-                    BUTTON_DOUBLE_CLICK => {
-                        println!("parse_event: BUTTON_DOUBLE_CLICK detected");
-                        Some(InputEvent::DoublePress)
-                    },
-                    BUTTON_HOLD => {
-                        println!("parse_event: BUTTON_HOLD detected");
-                        Some(InputEvent::LongPress)
-                    },
-                    _ => None,
                 }
             },
             EVT_CONNECTION_STATUS_CHANGED => {
@@ -452,10 +403,10 @@ impl FlicButton {
         
         // Check if it's a GetInfo response
         if response[0] == EVT_GET_INFO_RESPONSE {
-            println!("test_connection: Got GetInfo response");
+            println!("test_connection: Got GetInfo response (opcode 0x16)");
             Ok(())
         } else {
-            println!("test_connection: Unexpected response opcode: {}", response[0]);
+            println!("test_connection: Unexpected response opcode: {}, expected: {}", response[0], EVT_GET_INFO_RESPONSE);
             // We'll still return Ok here since we got some response
             Ok(())
         }
