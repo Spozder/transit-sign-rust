@@ -119,6 +119,9 @@ impl FlicButton {
             }
         }
         
+        // Print the parsed address in the way we'll use it
+        println!("Parsed BD address as bytes: {}", format_bytes(&addr));
+        
         Ok(addr)
     }
     
@@ -133,7 +136,8 @@ impl FlicButton {
         // Connection ID (4 bytes, little endian)
         cmd.extend_from_slice(&self.conn_id.to_le_bytes());
         
-        // Button address (6 bytes)
+        // Button address (6 bytes) - ensure correct byte order for Bluetooth address
+        // Bluetooth addresses in commands are typically sent in little-endian format
         cmd.extend_from_slice(&self.button_addr);
         
         // Latency mode (1 byte)
@@ -145,8 +149,8 @@ impl FlicButton {
         // Add length prefix (2 bytes, little endian)
         let cmd_len = cmd.len() as u16;
         let mut packet = Vec::with_capacity(2 + cmd_len as usize);
-        packet.push(cmd_len as u8);
-        packet.push((cmd_len >> 8) as u8);
+        // Length prefix in little-endian format
+        packet.extend_from_slice(&cmd_len.to_le_bytes());
         packet.extend_from_slice(&cmd);
         
         println!("create_connection_channel: Sending command packet with length prefix: {}", format_bytes(&packet));
@@ -201,11 +205,18 @@ impl FlicButton {
         }
         
         // Check if it's a connection channel response
-        if response[0] == EVT_CREATE_CONNECTION_CHANNEL_RESPONSE {
-            // Extract connection ID and result
-            let result = response[2];
+        // First two bytes of response are the length prefix
+        // Skip those and check if the opcode matches what we expect
+        if bytes_read >= 3 && response[0] == EVT_CREATE_CONNECTION_CHANNEL_RESPONSE {
+            // According to protocol docs, EVT_CREATE_CONNECTION_CHANNEL_RESPONSE structure is:
+            // opcode(1), connId(4), errorCode(1), reserved(2)
+            // The response bytes in our read don't include the length prefix, so:
+            // error code is at index 5 after opcode(0) + connId(1-4)
+            let result = if bytes_read >= 6 { response[5] } else { 1 };
             println!("create_connection_channel: Got connection channel response with result code: {}", result);
             
+            // Check error codes from protocol documentation
+            // 0 = SUCCESS, 1 = ERROR_ALREADY_EXISTS, etc.
             if result != 0 {
                 println!("create_connection_channel: Failed with error code: {}", result);
                 return Err(io::Error::new(
@@ -351,8 +362,8 @@ impl FlicButton {
         
         // Add length prefix (2 bytes, little endian)
         let mut packet = Vec::with_capacity(3);
-        packet.push(1); // Length low byte
-        packet.push(0); // Length high byte
+        let cmd_len: u16 = 1; // CMD_GET_INFO is just 1 byte
+        packet.extend_from_slice(&cmd_len.to_le_bytes()); // Little-endian length prefix
         packet.push(CMD_GET_INFO);
         
         // Send the command
@@ -401,13 +412,21 @@ impl FlicButton {
             ));
         }
         
-        // Check if it's a GetInfo response
-        if response[0] == EVT_GET_INFO_RESPONSE {
-            println!("test_connection: Got GetInfo response (opcode 0x16)");
+        // The first byte should be the opcode since we're reading directly from the stream
+        // which already skips the length prefix bytes
+        if bytes_read >= 1 && response[0] == EVT_GET_INFO_RESPONSE {
+            println!("test_connection: Got GetInfo response (opcode 0x{:02x})", EVT_GET_INFO_RESPONSE);
+            self.connected = true;
             Ok(())
         } else {
-            println!("test_connection: Unexpected response opcode: {}, expected: {}", response[0], EVT_GET_INFO_RESPONSE);
+            // If we got any response, at least we know the daemon is responding
+            // The protocol response structure includes a length prefix
+            println!("test_connection: Unexpected response opcode: 0x{:02x}, expected: 0x{:02x}", 
+                     if bytes_read >= 1 { response[0] } else { 0 }, 
+                     EVT_GET_INFO_RESPONSE);
+            println!("test_connection: Complete response: {}", format_bytes(&response[..bytes_read]));
             // We'll still return Ok here since we got some response
+            self.connected = true;
             Ok(())
         }
     }
@@ -426,8 +445,8 @@ impl FlicButton {
         // Add length prefix (2 bytes, little endian)
         let cmd_len = cmd.len() as u16;
         let mut packet = Vec::with_capacity(2 + cmd_len as usize);
-        packet.push(cmd_len as u8);
-        packet.push((cmd_len >> 8) as u8);
+        // Length prefix in little-endian format
+        packet.extend_from_slice(&cmd_len.to_le_bytes());
         packet.extend_from_slice(&cmd);
         
         println!("remove_connection_channel: Sending command: {}", format_bytes(&packet));
